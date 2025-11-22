@@ -6,7 +6,6 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
 type Database = Arc<Mutex<HashMap<String, String>>>;
-type Persistence = 
 fn main() {
     let db: Database = Arc::new(Mutex::new(HashMap::new()));
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
