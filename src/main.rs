@@ -5,7 +5,13 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
+mod store;
+mod server;
+mod clients;
+
 type Database = Arc<Mutex<HashMap<String, String>>>;
+
+
 fn main() {
     let db: Database = Arc::new(Mutex::new(HashMap::new()));
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
