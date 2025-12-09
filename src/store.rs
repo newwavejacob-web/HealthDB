@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 pub type Database = Arc<Mutex<HashMap<String, String>>>;
  
 
-pub fn new() -> Self {
+pub fn new() -> Database {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
@@ -15,19 +15,12 @@ pub fn set(db: &Database, key: String, value: String) {
 }
 //option return type is how we get some and none if get works or not
 pub fn get(db: &Database, key: &str) -> Option<String> {
-    let mut map = db.lock().unwrap();
-    match map.get(key) {
-        Some(value) => value.clone(),
-        None => "NIL".to_string(),
-    }
-    println!("{value}");
+    let map = db.lock().unwrap();
+    map.get(key).cloned() 
 }
-pub fn delete(db: &mut Database, key: &str) -> bool {
+pub fn delete(db: Database, key: &str) -> bool {
     let mut map = db.lock().unwrap();
-    match map.remove(key) {
-        Some(_) => "OK".to_string(),
-        None => "NIL".to_string(),
-    }
+    map.remove(key).is_some() 
 }
 /*
             //set main body

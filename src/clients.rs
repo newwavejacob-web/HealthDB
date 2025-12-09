@@ -1,10 +1,11 @@
 // this is my client handling file 
 
 use std::io::{BufRead, BufReader, Write};
+use std::net::TcpStream;
 use crate::store::{self, Database};
 
 
-pub fn read_stream(&self) -> Option<>{
+pub fn read_stream(mut stream: TcpStream, db: Database){ 
 
     let reader = BufReader::new(stream.try_clone().unwrap());
 
@@ -20,7 +21,7 @@ pub fn read_stream(&self) -> Option<>{
         stream.write_all(b"\n").unwrap();
     }
 }
-pub fn parse_command(command: &str, db: &Database) {
+pub fn parse_command(command: &str, db: &Database) -> String {
     let parts: Vec<&str> = command.split_whitespace().collect();
 
     if parts.is_empty() {
@@ -35,13 +36,17 @@ pub fn parse_command(command: &str, db: &Database) {
             let key = parts[1].to_string();
             let value = parts[2..].join(" ");
             store::set(db, key, value);
+            "OK".to_string()
         }
         "GET" => {
             if parts.len() < 2 {
                 return "ERROR: GET requires key".to_string();
             }
             let key = parts[1];
-            store::get(db, key);
+            match store::get(db, key){
+                Some(value) => value,
+                None => "NIL".to_string(),
+            }
             
         }
         "DEL" => {
@@ -49,14 +54,20 @@ pub fn parse_command(command: &str, db: &Database) {
                 return "ERROR: DEL requires key".to_string();
             }
             let key = parts[1];
-            store::delete(db, key);                    
+
+            if store::delete(db.clone(), key){
+                "OK".to_string()
+            }                    
+            else {
+                "NIL".to_string()
+            }
 
         }
         _ => format!("ERROR: unknown command '{}'", parts[0]),
     }
 }
 
-pub fn write_response(&self) -> Option<>{
+/*pub fn write_response(&self) -> Option<>{
 
-}
-}
+}*/
+

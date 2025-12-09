@@ -1,8 +1,10 @@
 // main server side database
-use::crate::clients{self, read_stream};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpListener;
+use std::sync::Arc;
+use crate::store::Database;
+use crate::clients;
 
-pub fn connection (mut stream: TcpStream, db: Database) {
+pub fn run(db: Database) {
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
     println!("db listening on 127.0.0.1:6379");

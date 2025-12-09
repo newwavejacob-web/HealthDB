@@ -1,9 +1,5 @@
 // GOAL IS TO GET A LOCK FREE VERISON WORKING by the end of 2025
 
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
 
 mod store;
 mod server;
@@ -11,29 +7,10 @@ mod clients;
 
 
 fn main() {
-    let db: Database = store::new();
-
-    let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
-    
-    println!("Mini-Redis listening on 127.0.0.1:6379");
-    
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                // this is of vital importance, clone 
-                // creates a copy of the db reference, &db
-                // the move keyword is then used with spawn 
-                // to handle multiple threads concurrently
-                let db = Arc::clone(&db);
-                std::thread::spawn(move || {
-                    handle_client(stream, db);
-                });
-            }
-            Err(e) => eprintln!("Connection failed: {}", e),
-        }
-    }
+    let db = store::new();
+    server::run(db);
 }
-
+/*
 fn handle_client(mut stream: TcpStream, db: Database) {
     //unwrap and read our cloned stream
     let reader = BufReader::new(stream.try_clone().unwrap());
@@ -99,4 +76,5 @@ fn process_command(command: &str, db: &Database) -> String {
         }
         _ => format!("ERROR: unknown command '{}'", parts[0]),
     }
-}
+};
+*/
