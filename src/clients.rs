@@ -1,67 +1,62 @@
 // this is my client handling file 
+
+use std::io::{BufRead, BufReader, Write};
 use crate::store::{self, Database};
 
-pub struct Stream {
 
+pub fn read_stream(&self) -> Option<>{
+
+    let reader = BufReader::new(stream.try_clone().unwrap());
+
+    //error pattern match, common thread
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        
+        let response = parse_command(&line, &db);
+        stream.write_all(response.as_bytes()).unwrap();
+        stream.write_all(b"\n").unwrap();
+    }
+}
+pub fn parse_command(command: &str, db: &Database) {
+    let parts: Vec<&str> = command.split_whitespace().collect();
+
+    if parts.is_empty() {
+        return "ERROR: empty command".to_string();
+    }
+    
+    match parts[0].to_uppercase().as_str() {
+        "SET" => {
+            if parts.len() < 3 {
+                return "ERROR: SET requires key and value".to_string();
+            }
+            let key = parts[1].to_string();
+            let value = parts[2..].join(" ");
+            store::set(db, key, value);
+        }
+        "GET" => {
+            if parts.len() < 2 {
+                return "ERROR: GET requires key".to_string();
+            }
+            let key = parts[1];
+            store::get(db, key);
+            
+        }
+        "DEL" => {
+            if parts.len() < 2 {
+                return "ERROR: DEL requires key".to_string();
+            }
+            let key = parts[1];
+            store::delete(db, key);                    
+
+        }
+        _ => format!("ERROR: unknown command '{}'", parts[0]),
+    }
 }
 
-impl Stream {
-    pub fn new() -> Self {
+pub fn write_response(&self) -> Option<>{
 
-    }
-    pub fn read_stream(&self) -> Option<>{
-
-        let reader = BufReader::new(stream.try_clone().unwrap());
-    
-        //error pattern match, common thread
-        for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => break,
-            };
-            
-            let response = parse_command(&line, &db);
-            stream.write_all(response.as_bytes()).unwrap();
-            stream.write_all(b"\n").unwrap();
-        }
-    }
-    pub fn parse_command(command: &str, db: &Database) {
-        let parts: Vec<&str> = command.split_whitespace().collect();
-    
-        if parts.is_empty() {
-            return "ERROR: empty command".to_string();
-        }
-        
-        match parts[0].to_uppercase().as_str() {
-            "SET" => {
-                if parts.len() < 3 {
-                    return "ERROR: SET requires key and value".to_string();
-                }
-                let key = parts[1].to_string();
-                let value = parts[2..].join(" ");
-                store::set(db, key, value);
-            }
-            "GET" => {
-                if parts.len() < 2 {
-                    return "ERROR: GET requires key".to_string();
-                }
-                let key = parts[1];
-                store::get(db, key);
-                
-            }
-            "DEL" => {
-                if parts.len() < 2 {
-                    return "ERROR: DEL requires key".to_string();
-                }
-                let key = parts[1];
-                store::delete(db, key);                    
-
-            }
-            _ => format!("ERROR: unknown command '{}'", parts[0]),
-        }
-    }
-    
-    pub fn write_response(&self) -> Option<>{
-
-    }
+}
 }

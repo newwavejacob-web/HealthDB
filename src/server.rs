@@ -1,7 +1,8 @@
 // main server side database
+use::crate::clients{self, read_stream};
+use std::net::{TcpListener, TcpStream};
 
-
-fn connection -> () {
+pub fn connection (mut stream: TcpStream, db: Database) {
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
     println!("db listening on 127.0.0.1:6379");
