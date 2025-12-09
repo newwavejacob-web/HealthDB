@@ -1,21 +1,56 @@
 // actually storage operations??
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-pub struct Database {
+pub type Database = Arc<Mutex<HashMap<String, String>>>;
+ 
 
+pub fn new() -> Self {
+    Arc::new(Mutex::new(HashMap::new()))
 }
 
-impl Database {
-    pub fn new() -> Self {
-        todo!()
+pub fn set(db: &Database, key: String, value: String) {
+    let mut map = db.lock().unwrap();
+    map.insert(key, value);
+}
+//option return type is how we get some and none if get works or not
+pub fn get(db: &Database, key: &str) -> Option<String> {
+    let mut map = db.lock().unwrap();
+    match map.get(key) {
+        Some(value) => value.clone(),
+        None => "NIL".to_string(),
     }
-    pub fn set(&mut self, key: String, value: String) {
-        todo!()
-    }
-    //option return type is how we get some and none if get works or not
-    pub fn get(&self, key: &str) -> Option<String> {
-        todo!()
-    }
-    pub fn delete(&mut self, key: &str) -> bool {
-        todo!()
+    println!("{value}");
+}
+pub fn delete(db: &mut Database, key: &str) -> bool {
+    let mut map = db.lock().unwrap();
+    match map.remove(key) {
+        Some(_) => "OK".to_string(),
+        None => "NIL".to_string(),
     }
 }
+/*
+            //set main body
+            let key = parts[1].to_string();
+            let value = parts[2..].join(" ");
+            
+            let mut map = db.lock().unwrap();
+            map.insert(key, value);
+            "OK".to_string()
+            let key = parts[1];
+
+            //get main body 
+            let map = db.lock().unwrap();
+            match map.get(key) {
+                Some(value) => value.clone(),
+                None => "NIL".to_string(),
+            }
+
+            // delete main body code
+            let key = parts[1];
+            let mut map = db.lock().unwrap();
+            match map.remove(key) {
+                Some(_) => "OK".to_string(),
+                None => "NIL".to_string(),
+            }
+*/

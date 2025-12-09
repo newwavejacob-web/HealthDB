@@ -9,11 +9,10 @@ mod store;
 mod server;
 mod clients;
 
-type Database = Arc<Mutex<HashMap<String, String>>>;
-
 
 fn main() {
-    let db: Database = Arc::new(Mutex::new(HashMap::new()));
+    let db: Database = store::new();
+
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
     
     println!("Mini-Redis listening on 127.0.0.1:6379");
@@ -80,6 +79,7 @@ fn process_command(command: &str, db: &Database) -> String {
             let key = parts[1];
             
             let map = db.lock().unwrap();
+
             match map.get(key) {
                 Some(value) => value.clone(),
                 None => "NIL".to_string(),
