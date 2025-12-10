@@ -6,7 +6,6 @@ pub type Database = Arc<Mutex<HashMap<String, String>>>;
 // i gotta write every operation in here
 // instead of saving the hashmap every time, we save the operations we do to the hashmap to load
 // back in
-pub type Backup = //file  
 
 pub fn new() -> Database {
     Arc::new(Mutex::new(HashMap::new()))

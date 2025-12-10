@@ -4,7 +4,7 @@
 mod store;
 mod server;
 mod clients;
-
+mod logs;
 
 fn main() {
     let db = store::new();
