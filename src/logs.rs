@@ -56,40 +56,30 @@ pub fn parse_log(file: &File, db: &Database)-> Result<(), Box<dyn Error>>{
    }
    Ok(())
 }
-pub fn parse_log_command(command: &str, db: &Database) -> String {
+pub fn parse_log_command(command: &str, db: &Database) {
     let parts: Vec<&str> = command.split_whitespace().collect();
 
-    if parts.is_empty() {
+   /* if parts.is_empty() {
         return "ERROR: empty command".to_string();
-    }
+    }*/
     
     match parts[0].to_uppercase().as_str() {
         "SET" => {
-            if parts.len() < 3 {
+          /*  if parts.len() < 3 {
                 return "ERROR: SET requires key and value".to_string();
-            }
+            }*/
             let key = parts[1].to_string();
             let value = parts[2..].join(" ");
             store::set(db, key, value);
-            "OK".to_string()
         }
         "DEL" => {
-            if parts.len() < 2 {
-                return "ERROR: DEL requires key".to_string();
-            }
             let key = parts[1];
 
-            if store::delete(db.clone(), key){
-                "OK".to_string()
-            }                    
-            else {
-                "NIL".to_string()
-            }
+            store::delete(db.clone(), key);
 
         }
-        "GET" => format!("'{}' Doesn't matter when reloading", parts[0]),
-        _ => format!("ERROR: unknown command '{}'", parts[0]),
-    }
+        _ => return,
+   }
 }
 /* or wait, can i jsut do parse command and just reload everythiinig on teh database 
  * NO, we actually can't. if we call the normal commands, we will jsut be double logging, so we
