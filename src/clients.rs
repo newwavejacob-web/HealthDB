@@ -35,6 +35,7 @@ pub fn parse_command(command: &str, db: &Database) -> String {
             }
             let key = parts[1].to_string();
             let value = parts[2..].join(" ");
+            logs::log_set(key, value); // add error handling
             store::set(db, key, value);
             "OK".to_string()
         }
@@ -54,7 +55,7 @@ pub fn parse_command(command: &str, db: &Database) -> String {
                 return "ERROR: DEL requires key".to_string();
             }
             let key = parts[1];
-
+            logs::log_del(key); // add error handling
             if store::delete(db.clone(), key){
                 "OK".to_string()
             }                    

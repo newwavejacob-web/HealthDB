@@ -7,14 +7,14 @@ use std::error::Error;
 use crc32fast::Hasher;
 
 struct WAL {
-    logFile: File,
-    command: &str
+    log_file: File,
+    log_flag: bool,
 }
 
 impl WAL {
     pub fn create_log() {
-        let WAL::logFile = File::open("log.txt");
-        
+        let file_result = File::open("log.txt");
+        let WAL::log_file = file_result; 
         // both arms of a match must return the same type
         match file_result {
             Ok(file) => println!("logfile already created"),
@@ -32,12 +32,12 @@ impl WAL {
 
 
         let mut hasher = Hasher::new();
-        hasher.update(b"SET {} {}\n", key, value);
-        let checksum = hasher.finalize();
-        println!("CRC32 checksum: {}", checksum); 
-        let file_write = String::from("{} SET {} {}\n", key, value, checksum);  
+        let file_write = format!("SET {} {}\n", key, value).as_bytes();  
         let byte_size = file_write.len();
-        file.write_all(format!("{} {} SET {} {}\n", byte_size, key, value, checksum).as_bytes())?;
+        hasher.update(file_write);
+        let checksum = hasher.finalize();
+//        println!("CRC32 checksum: {}", checksum); 
+        file.write_all(format!("{} SET {} {} {}\n", byte_size, key, value, checksum).as_bytes())?;
         println!("Appended to log");
         Ok(())
     }
@@ -46,14 +46,19 @@ impl WAL {
             .append(true)
             .open("log.txt")?;
         
-        file.write_all(format!("DEL {} {}\n", key, value).as_bytes())?;
+        let mut hasher = Hasher::new();
+        let file_write = format!("DEL {} {}", key, value).as_bytes();  
+        let byte_size = file_write.len();
+        hasher.update(file_write);
+        let checksum = hasher.finalize();
+//        println!("CRC32 checksum: {}", checksum); 
+        file.write_all(format!("{} DEL {} {} {}\n", byte_size, key, value, checksum).as_bytes())?;
         println!("Appended to log");
         Ok(())
     }
 
-    // this is the tricky part. how do i make it so that if my db detects the log file != empty, then
-    // it reloads all of the operations on the hash map
-
+    // need to use a flag to know whether we append or reload, add handling
+    // WE RELOAD WHENEVER LOGS DONT MATCH DATABASE? IM PRETTY SURE
     pub fn reload() -> Result<(), Box<dyn Error>> {
     let file = File::open("log.txt")?;
     let db = store::new(); // literally the error I JUST FUCKING GOT 
@@ -64,38 +69,76 @@ impl WAL {
     let reader = BufReader::new(file);
     for line in reader.lines() {
         let line_result = line?;
-        let response = parse_log_command(&line_result,&db); //just implement clients?  YES YOU JUST
-                                                                //IMPLEMENT CLIENTS YOU FUCK WHEN YOU IMPORT
-                                                                //YOU HAVE TO USE CLIENTS:: OR STORE:: FUCK
-    }
-    Ok(())
-    }
-    pub fn parse_log_command(command: &str, db: &Database) {
-        let parts: Vec<&str> = command.split_whitespace().collect();
-
+        //let response = parse_log_command(&line_result,&db); //just implement clients?  YES YOU JUST
+        let parts: Vec<&str> = line_result.split_whitespace().collect();
+        let lastidx = parts.len() - 1;
+        let payload = format!("{} {} {} ", parts[1], parts[2], parts[3..lastidx-1].join(" "));
+        let mut hasher = Hasher::new();
+        hasher.update(payload);
+        let checksum = hasher.finalize();
+        println!("CRC32 checksum: {}", checksum); 
+       
+        if checksum != parts[lastidx] {
+            eprintln!("Checksum doesn't match, Recheck Data for tampering."); // must add proper error handling
+        }
+        // verify checksum
     // we have to switch this doing the length check, then the reverse checksum, then we do the
     // reload operations. they have to be native to this code as i will get double logs if im
     // calling store ::, need to own it in here`    
-        match parts[0].to_uppercase().as_str() {
+        match parts[1].to_uppercase().as_str() {
             "SET" => {
             /*  if parts.len() < 3 {
                     return "ERROR: SET requires key and value".to_string();
                 }*/
-                let key = parts[1].to_string();
-                let value = parts[2..].join(" ");
-                store::set(db, key, value);
+                let key = parts[2];
+                let value = parts[3];
+                store::set(&db, &key, &value, flag);
             }
             "DEL" => {
-                let key = parts[1];
-
-                store::delete(db.clone(), key);
+                let key = parts[3];
+                store::delete(&db.clone(), &key, &value, flag);
 
             }
             _ => return,
     }
     }
-    /* or wait, can i jsut do parse command and just reload everythiinig on teh database 
-    * NO, we actually can't. if we call the normal commands, we will jsut be double logging, so we
-    * must write our own logic.
+                                                                //IMPLEMENT CLIENTS YOU FUCK WHEN YOU IMPORT
+                                                                //YOU HAVE TO USE CLIENTS:: OR STORE:: FUCK
+    }
+    Ok(())
+    }
+    /*pub fn parse_log_command(command: &str, db: &Database) {
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        let lastidx = parts.len() - 1;
+        let payload = format!("{} {} {} ", parts[1], parts[2], parts[3..lastidx-1]).join(" ");
+        let mut hasher = Hasher::new();
+        hasher.update(payload);
+        let checksum = hasher.finalize();
+        println!("CRC32 checksum: {}", checksum); 
+       
+        if checksum != parts[lastidx] {
+            return; // must add proper error handling
+        }
+        // verify checksum
+    // we have to switch this doing the length check, then the reverse checksum, then we do the
+    // reload operations. they have to be native to this code as i will get double logs if im
+    // calling store ::, need to own it in here`    
+        match parts[1].to_uppercase().as_str() {
+            "SET" => {
+            /*  if parts.len() < 3 {
+                    return "ERROR: SET requires key and value".to_string();
+                }*/
+                let key = parts[2];
+                let value = parts[3];
+                store::set(db, key, value);
+            }
+            "DEL" => {
+                let key = parts[3];
+                store::delete(db.clone(), key);
+
+            }
+            _ => return,
+    }
     }*/
-}
+   
+
