@@ -2,11 +2,16 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+pub struct Database {
+    storage:Arc<Mutex<HashMap<String, String>>>,
+    signing: // some security bs
+    isUP: bool
+}
 pub type Database = Arc<Mutex<HashMap<String, String>>>;
 // i gotta write every operation in here
 // instead of saving the hashmap every time, we save the operations we do to the hashmap to load
 // back in
-
+//impl Database {
 pub fn new() -> Database {
     Arc::new(Mutex::new(HashMap::new()))
 }
@@ -24,6 +29,7 @@ pub fn delete(db: Database, key: &str) -> bool {
     let mut map = db.lock().unwrap();
     map.remove(key).is_some() 
 }
+//}
 /*
             //set main body
             let key = parts[1].to_string();
