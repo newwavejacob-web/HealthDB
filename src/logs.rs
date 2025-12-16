@@ -51,7 +51,7 @@ pub fn log_del(key: &str) -> Result<(), Box<dyn Error>>  {
         .open("log.txt")?;
     
     let mut hasher = Hasher::new();
-    let file_write = format!("DEL {}", key);
+    let file_write = format!("DEL {}\n", key);
     let byte_size = file_write.len();
     
     let file_write_check = file_write.as_bytes();  
@@ -103,7 +103,7 @@ for line in reader.lines() {
             store::set(&db, key, value, flag);
 
         }
-        "DEl" => {
+        "DEL" => {
 
             let payload_string = format!("{} {}\n", parts[1], parts[2..lastidx].join(" "));
             let payload = payload_string.as_bytes();
@@ -124,7 +124,7 @@ for line in reader.lines() {
             store::delete(&db.clone(), key, flag);
            // same here return Ok(())
         }
-        _ => eprintln!("tampered or corrupted WAL"),
+        _ => eprintln!("Wall reload complete"),
     }
 /*    match parts[1].to_uppercase().as_str() {
         "SET" => {
