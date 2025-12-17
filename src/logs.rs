@@ -126,31 +126,10 @@ for line in reader.lines() {
         }
         _ => eprintln!("Wall reload complete"),
     }
-/*    match parts[1].to_uppercase().as_str() {
-        "SET" => {
-        /*  if parts.len() < 3 {
-                return "ERROR: SET requires key and value".to_string();
-            }*/
-            let key = parts[2].to_string();
-            let value = parts[3].to_string();
-            let flag = false;
-            store::set(&db, key, value, flag);
-        // this is wrong, im returning early after every reaload operation    return Ok(())
-        }
-        "DEL" => {
-            let key = parts[2];
-            let flag = false;
-            store::delete(&db.clone(), key, flag);
-           // same here return Ok(())
-        }
-        _ => eprintln!("tampered or corrupted WAL"),
-    }*/
-
 }
 Ok(())
 }
-                                           // IMPLEMENT CLIENTS YOU FUCK WHEN YOU IMPORT
-
+                                           
 
 
 
