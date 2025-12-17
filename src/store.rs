@@ -23,6 +23,7 @@ pub fn set(db: &Database, key: String, value: String, log_flag: bool) {
 }
 //option return type is how we get some and none if get works or not
 pub fn get(db: &Database, key: &str) -> Option<String> {
+    println!("store::get called");
     let map = db.lock().unwrap();
     map.get(key).cloned() 
 }

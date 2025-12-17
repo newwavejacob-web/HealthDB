@@ -57,7 +57,7 @@ pub fn parse_command(command: &str, db: &Database) -> String {
             let key = parts[1];
             let flag = true;
             if store::delete(&db.clone(), key, flag){
-                "OK".to_string()
+                key.to_string()
             }                    
             else {
                 "NIL".to_string()
