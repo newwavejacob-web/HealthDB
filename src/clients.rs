@@ -56,6 +56,10 @@ pub fn parse_command(command: &str, db: &Database) -> String {
             }
             let key = parts[1];
             let flag = true;
+
+            // not sure if this is an edge case, but our WAL stores delete entries that aren't
+            // true, aka NIL. this is because im logging before it do the actual operation,
+            // so i cant know it its right or wrong before hand.
             if store::delete(&db.clone(), key, flag){
                 key.to_string()
             }                    
