@@ -22,6 +22,8 @@ pub fn read_stream(mut stream: TcpStream, db: Database){
     }
 }
 pub fn parse_command(command: &str, db: &Database) -> String {
+    
+//TODO update parsing to serialization in serde
     let parts: Vec<&str> = command.split_whitespace().collect();
 
     if parts.is_empty() {

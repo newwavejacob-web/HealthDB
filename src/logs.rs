@@ -70,6 +70,8 @@ pub fn reload(log_file: &File, db: &Database) -> Result<(), Box<dyn Error>> {
 parse_log(&log_file, &db);
 Ok(())
 }
+
+//TODO update parsing to serialization in serde
 pub fn parse_log(file: &File, db: &Database)-> Result<(), Box<dyn Error>>{
 let reader = BufReader::new(file);
     for line in reader.lines() {
