@@ -1,27 +1,71 @@
 // this is wherer im gonna start building raft shit is gonna be lit'
-
+use std::fs::File;
+use serde::{Serialize, Deserialize};
 
 /* raft mesaging */
-struct perState{
-    currentTerm: i64,
-    votedFor: //TcpStream??
+
+// our in house per node storage
+struct NodeState {
+    role: Role,
+    currentTerm: u64,
+    votedFor: Option<u64>,
               
-    log: // this is our wal
+    log: File, 
          
     //volState
-    commit_index: i64,
-    last_applied: i64,
+    commit_index: u64,
+    last_applied: u64,
 
     //leader VolState
-    next_index: i64,
-    match_index: i64,
+    next_index: u64,
+    match_index: u64,
 }
-enum RPC {
-    append_entries, request_vote,
+    
+enum Role {
+    Leader,
+    Follower,
+    Candidate,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct AppendEntriesMsg {
+    term: u64,
+    leader_id: u64,
+    prev_log_idx: u64,
+    prev_log_term_entries: Vec<u64>, 
+    leader_commit: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct RequestVoteMsg {
+    term: u64,
+    candidate_id: u64,
+    last_log_idx: u64, 
+    last_log_term: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct RequestVoteResponse {
+    votedFor: Option<u64>,
+    currentTerm: u64,
+    voted: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AppendEntriesResponse {
+    currentTerm: u64,
+    success: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+enum RaftMsg {
+    AppendEntries(AppendEntriesMsg),
+    RequestVote(RequestVoteMsg),
+    AppendEntriesResponse(AppendEntriesResponse),
+    RequestVoteResponse(RequestVoteResponse),
+}
 //invoked by leader
-pub fn append_entries(term: i64, leader_id: i64, prev_log_idx: i64, prev_log_term_entries: /*array??*/ , leader_commit: i64) -> i64, bool { //term, success return variables
+pub fn append_entries(term: u64, leader_id: u64, prev_log_idx: u64, prev_log_term_entries: Vec<u64>, leader_commit: u64) -> bool { //term, success return variables
     if term < currentTerm {
         return false;
     }
@@ -47,7 +91,7 @@ pub fn append_entries(term: i64, leader_id: i64, prev_log_idx: i64, prev_log_ter
 
 }
 // we arent actually voting here, we are checking logs to get a "vote"
-pub fn request_vote(term: i64, candidate_id: i64, last_log_idx: i64, last_log_term: i64) -> i64, bool // currentTerm, voteGranted
+pub fn request_vote(term: u64, candidate_id: u64, last_log_idx: u64, last_log_term: u64) ->  bool // currentTerm, voteGranted
 {
     if term < currentTerm {
         return false;
@@ -77,5 +121,115 @@ pub fn request_vote(term: i64, candidate_id: i64, last_log_idx: i64, last_log_te
 
 //USE SERDE
 
-pub fn send_node_msg () {}
-pub fn recieve_node_msg () {}
+pub fn send_node_msg (node_id: &str, msg_type: &str,) {
+    let mut stream = TcpStream::connect(node_id).unwrap();
+    // write info to stream here, this is our basis. we gonnna be basically just sending serde
+    // right.
+    match msg_type {
+        "1" => {
+            let msg = RaftMsg::AppendEntriesMsg
+        }
+        "2" => {
+
+        }
+        "3" => {
+
+        }
+        "4" => {
+
+        }
+        _ => {
+
+        }
+    }
+
+
+}
+//ik  what its supposed to look like 
+//serde everything into nodes.
+//pass nodes everywhere
+//if node is leader, then send heartbeat every like fucking 200 ms idk. pub fn heartbeat(node_id: &str){
+        let mut stream = TcpStream::connect(node_id).unwrap();
+        let heartbeat_msg = AppendEntriesMsg {
+            term,
+            leader_id,
+            prev_log_idx: 0,
+            prev_log_term_entries: vec![],
+            leader_commit: 0,
+        };
+        let stream_write = bincode::serialize(&heartbeat_msg).unwrap();
+
+        let mut buffer = [0u8; 1024];
+        let read = stream.read(&mut buffer).unwrap();
+        println!("revieved H34RTB33T {:?} ", &buffer[..read]);
+    
+    // sleep(Duration::from_millis(300));    
+    // maybe i should put this in the read? have it so that it reads every 300 ms and if it doesnt
+    // detect a heartbeat tbhen it automatically transitions in to candidate status 
+    
+}
+
+pub fn detect_heartbeat(node_id: &str) {
+    let listener = TcpListener::bind(node_id).unwrap();
+
+    for stream in listener.incoming() {
+            match stream {
+                Ok(stream) => {
+                    let mut stream = stream.unwrap();
+                    let mut buffer = [0u8; 1024];
+                    let read = stream.read(&mut buffer).unwrap();
+                    
+                    if &buffer[..read] == b"H34RTB33T" {
+                        println!("got heartbeat");
+                        stream.write_all(b"ACK").unwrap();
+                    }
+                }
+                Err(e) => {
+                }
+            }
+    }
+}
+// here, if we are a follower, and we havent revieved a heartbeat in 200ms, become candidate
+/*pub fn leader_election(){
+    if Role::Follower {
+        if Node::noHeartBeat {
+            Node::Role = Candidate;
+            // then we start voting shit. just need this for the heartbeat.
+        }
+    }
+}*/
+pub fn recieve_node_msg (node_id: &str) {
+    let listener = TcpListener::bind(node_id).unwrap();
+    
+    for stream in listener.incoming() {
+            match stream {
+                Ok(stream) => {
+
+                    let mut buffer = [0u8; 1024];
+                    let read = stream.read(&buffer[..read]).unwrap(); 
+                    let msg: RaftMsg = bincode::deserialize(&buffer).unwrap();
+
+                        // DO DIFFERENT LOGIC DEPENDING ON WHAT WE REVIECE.
+                        // CALL FUNCTIONS here
+                        match msg {
+                            RaftMsg::AppendEntriesMsg(ae) => {
+                        
+                            }
+                            RaftMsg::RequestVoteMsg(rv) => {
+
+                            }
+                            RaftMsg::AppendEntriesResponse(resp) => {
+
+                            }
+                            RaftMsg::RequestVoteResponse(resp) => {
+
+                            }
+                        }
+
+                    });
+                }
+                Err(e) => eprintln!("Connection failed: {}", e),
+            }
+        
+    }
+}
