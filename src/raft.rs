@@ -121,34 +121,38 @@ pub fn request_vote(term: u64, candidate_id: u64, last_log_idx: u64, last_log_te
 
 //USE SERDE
 
-pub fn send_node_msg (node_id: &str, msg_type: &str,) {
+// send rpc
+#[test]
+#[should_panic]
+pub fn send_node_msg (node_id: &str, msg_type: RaftMsg,) {
     let mut stream = TcpStream::connect(node_id).unwrap();
     // write info to stream here, this is our basis. we gonnna be basically just sending serde
     // right.
     match msg_type {
-        "1" => {
+        "AppendEntriesMsg" => {
             let msg = RaftMsg::AppendEntriesMsg
+            send_append_msg(&msg);
         }
-        "2" => {
-
+        "AppendEntriesResponse" => {
+            let msg = RaftMsg::AppendEntriesResponse
+            send_append_resp(&msg);
         }
-        "3" => {
-
+        "RequestVoteMsg" => {
+            let msg = RaftMsg::RequestVoteMsg
+            send_vote_msg(&msg);
         }
-        "4" => {
-
+        "RequestVoteResponse" => {
+            let msg = RaftMsg::RequestVoteResponse
+            send_vote_resp(&msg);
         }
-        _ => {
-
-        }
+        _ => eprintln!("not valid raft RPC")   
     }
-
-
 }
 //ik  what its supposed to look like 
 //serde everything into nodes.
 //pass nodes everywhere
-//if node is leader, then send heartbeat every like fucking 200 ms idk. pub fn heartbeat(node_id: &str){
+//if node is leader, then send heartbeat every like fucking 200 ms idk.
+pub fn heartbeat(node_id: &str){
         let mut stream = TcpStream::connect(node_id).unwrap();
         let heartbeat_msg = AppendEntriesMsg {
             term,
@@ -162,13 +166,25 @@ pub fn send_node_msg (node_id: &str, msg_type: &str,) {
         let mut buffer = [0u8; 1024];
         let read = stream.read(&mut buffer).unwrap();
         println!("revieved H34RTB33T {:?} ", &buffer[..read]);
+        
+        stream.write_all(stream_write);
     
     // sleep(Duration::from_millis(300));    
     // maybe i should put this in the read? have it so that it reads every 300 ms and if it doesnt
     // detect a heartbeat tbhen it automatically transitions in to candidate status 
     
 }
+/*
+pub fn send_append_msg(){
 
+}
+pub fn send_append_resp(){
+}
+pub fn send_vote_msg(){
+}
+pub fn send_vot_resp(){
+}
+*/
 pub fn detect_heartbeat(node_id: &str) {
     let listener = TcpListener::bind(node_id).unwrap();
 
@@ -178,15 +194,40 @@ pub fn detect_heartbeat(node_id: &str) {
                     let mut stream = stream.unwrap();
                     let mut buffer = [0u8; 1024];
                     let read = stream.read(&mut buffer).unwrap();
-                    
-                    if &buffer[..read] == b"H34RTB33T" {
-                        println!("got heartbeat");
-                        stream.write_all(b"ACK").unwrap();
+
+                    let stream_read = bincode::deserialize(&read).unwrap();
+                    if stream_read == AppendEntriesMsg.isEmpty() {
+                        let NodeState::role = Follower;
+                        sleep(Duration::from_millis(300));
+                    } 
+                    else if stream_read != AppendEntriesMsg {
+                        let NodeState::role = Candidate;
+                        // become candidate?
+                        // then we gotta vote for oour selves andstart leader elevtion. 
+                        start_election(node);
                     }
+                    
                 }
                 Err(e) => {
+                    eprintln!("no tcp connection detected");
                 }
             }
+    }
+}
+pub fn start_election(node: Node, node_state: NodeState){
+    node::self.current_term += 1;
+    node::self.voted_for = Some(self.node_id);
+    let mut votes = 1;
+
+    for node in nodes {
+        if vote_success && response.term = self.current_term {
+            votes += 1;
+
+            if votes > (num_nodes / 2) {
+                let Node::role = Leader;
+                self.become_leader();
+            }
+        }
     }
 }
 // here, if we are a follower, and we havent revieved a heartbeat in 200ms, become candidate
