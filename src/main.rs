@@ -4,7 +4,7 @@ mod store;
 mod server;
 mod clients;
 mod logs;
-//mod raft;
+mod raft;
 
 fn main() {
     let db = store::new();
