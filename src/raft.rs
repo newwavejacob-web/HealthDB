@@ -3,7 +3,7 @@ use std::net::{TcpStream, TcpListener};
 use std::fs::File;
 use std::io::{Read, Write};
 use serde::{Serialize, Deserialize};
-use tokio::time::{duration, sleep};
+use tokio::time::{Duration, sleep};
 use tokio::sync::mpsc;
 
 /* raft mesaging */
@@ -17,8 +17,8 @@ enum Role {
 // our in house per node storage
 struct NodeState {
     role: Role,
-    currentTerm: u64,
-    votedFor: Option<u64>,
+    current_term: u64,
+    voted_for: Option<u64>,
               
     log: Vec<u64>, // is this even waht we want it as or do we want it as a vec of structs
          
@@ -72,6 +72,12 @@ enum RaftMsg {
     RequestVoteResponse(RequestVoteResponse),
 }
 
+enum RaftEvent {
+    IncomingRpc(RaftMsg),
+    ElectionTimeout,
+    Heartbeat, // this will be append_entries filled with zeroes.
+}
+
 impl NodeState {
     //TODO urgent 
     /*
@@ -117,23 +123,20 @@ impl NodeState {
     pub fn send_node_msg (&self, node_id: &str, msg_type: RaftMsg,) {
         let mut stream = TcpStream::connect(node_id).unwrap();
         // write info to stream here, this is our basis. we gonnna be basically just sending serde
-        // right.
         match msg_type {
             // so look here we are literally saying to match on MSG FUCKING TYPE, so we have to
             // fucking match on this type dumbass
-            /*"AppendEntriesMsg" => {
-                let msg = 
-                send_append_msg(&msg);
-            }*/
             RaftMsg::AppendEntries(ae) =>{
-
+                todo!();
             }
             RaftMsg::AppendEntriesResponse(resp) =>{
-
+                todo!();
             }
             RaftMsg::RequestVote(rv) => {
+                todo!();
             }
             RaftMsg::RequestVoteResponse(resp) => {
+                todo!();
             }
             _ => eprintln!("not valid raft RPC")   
         }
@@ -142,47 +145,36 @@ impl NodeState {
         let listener = TcpListener::bind(node_id).unwrap();
         
         for stream in listener.incoming() {
-                match stream {
-                    Ok(stream) => {
+            match stream {
 
-                        let mut buffer = [0u8; 1024];
-                        let read = stream.read(&buffer[..read]).unwrap(); 
-                        let msg: RaftMsg = bincode::deserialize(&buffer).unwrap();
+                Ok(stream) => {
+                    let mut buffer = [0u8; 1024];
+                    let read = stream.read(&mut buffer).unwrap(); 
+                    let msg: RaftMsg = bincode::deserialize(&buffer[..read]).unwrap();
 
-                            // DO DIFFERENT LOGIC DEPENDING ON WHAT WE REVIECE.
-                            // CALL FUNCTIONS here
-                            match msg {
-                                RaftMsg::AppendEntriesMsg(ae) => {
-                            
-                                }
-                                RaftMsg::RequestVoteMsg(rv) => {
-
-                                }
-                                RaftMsg::AppendEntriesResponse(resp) => {
-
-                                }
-                                RaftMsg::RequestVoteResponse(resp) => {
-
-                                }
+                        // DO DIFFERENT LOGIC DEPENDING ON WHAT WE REVIECE.
+                        // CALL FUNCTIONS here
+                        match msg {
+                            RaftMsg::AppendEntries(ae) => {
+                                todo!();
                             }
-                    }
-                    Err(e) => eprintln!("Connection failed: {}", e),
+                            RaftMsg::RequestVote(rv) => {
+                                todo!();
+                            }
+                            RaftMsg::AppendEntriesResponse(resp) => {
+                                todo!();
+                            }
+                            RaftMsg::RequestVoteResponse(resp) => {
+                                todo!();
+                            }
+                        }
                 }
-            
+
+                Err(e) => eprintln!("Connection failed: {}", e),
+            }
         }
     }
-    /*
-    pub fn send_append_msg(){
 
-    }
-    pub fn send_append_resp(){
-    }
-    pub fn send_vote_msg(){
-    }
-    pub fn send_vot_resp(){
-    }
-    */
-    //
     //ik  what its supposed to look like 
     //serde everything into nodes.
     //pass nodes everywhere
@@ -190,60 +182,65 @@ impl NodeState {
     //
     //TODO TODO TODO i have to implement my tokio timer into here, stream + channel to listen on
     //many conncurrent events
-    pub fn heartbeat(&self, node_id: &str){
-            let mut stream = TcpStream::connect(node_id).unwrap();
-            let heartbeat_msg = AppendEntriesMsg {
-                term,
-                leader_id,
-                prev_log_idx: 0,
-                prev_log_term_entries: vec![],
-                leader_commit: 0,
-            };
-            let stream_write = bincode::serialize(&heartbeat_msg).unwrap();
 
-            let mut buffer = [0u8; 1024];
-            let read = stream.read(&mut buffer).unwrap();
-            println!("revieved H34RTB33T {:?} ", &buffer[..read]);
-            
-            stream.write_all(stream_write);
-        
-        // sleep(Duration::from_millis(300));    
-        // maybe i should put this in the read? have it so that it reads every 300 ms and if it doesnt
-        // detect a heartbeat tbhen it automatically transitions in to candidate status 
-        
-    }
-    pub fn detect_heartbeat(&self, node_id: &str) {
-        let listener = TcpListener::bind(node_id).unwrap();
+    pub async fn rpc_handler(&self, event_tx: mpsc::Sender<RaftEvent>) {
+        let listener = TcpListener::bind(...);
+        loop {
+            let stream = listener.accept();
+            let msg = deserialize_from(stream);
 
-        for stream in listener.incoming() {
-                match stream {
-                    Ok(stream) => {
-                        let mut buffer = [0u8; 1024];
-                        let read = stream.read(&mut buffer).unwrap();
-
-                        let stream_read = bincode::deserialize(&read).unwrap();
-                        if stream_read == AppendEntriesMsg.isEmpty() {
-                            self.role = Role::Follower;
-                            sleep(Duration::from_millis(300));
-                        } 
-                        else if stream_read != AppendEntriesMsg {
-                            let NodeState::role = Candidate;
-                            // become candidate?
-                            // then we gotta vote for oour selves andstart leader elevtion. 
-                            start_election(node);
-                        }
-                        
-                    }
-                    Err(e) => {
-                        eprintln!("no tcp connection detected");
-                    }
-                }
+            event_tx.send(RaftEvent::IncomingRpc(msg)).await;
         }
     }
-    // TODO
-    /*pub async fn start_election(node: Node, node_state: NodeState){
-        node::self.current_term += 1;
-        node::self.voted_for = Some(self.node_id);
+    // this is our heartbeat
+    pub async fn election_timer(&self, event_tx: mpsc::Sender<RaftEvent>, reset_rx: mpsc::Receiver<()>){
+        loop {
+            tokio::select! {
+                // this sleep block needs to eventually be our random election timeout 
+                _ = sleep(Duration::from_millis(300)) => {
+                    println("Election start, no reset");
+                    //or 
+                    //event_tx.send(RaftEvent::ElectionTimeout).await;
+                }
+                _ = reset_rx.recv() => {
+                    println!("election reset due to leader");
+                    //reset loop here
+                } 
+            }
+        }
+    }
+    pub async fn start_leader_election(&self, event_tx: mpsc::Receiver<()>) {
+        loop {
+            if event_tx == RaftEvent::ElectionTimeout => {
+                self.role = Role::Candidate;
+                self.current_term += 1;
+                self.voted_for = Some(node_id);
+            }
+        }
+    }
+ /*    pub fn heartbeat(&self, node_id: &str){
+        let mut stream = TcpStream::connect(node_id).unwrap();
+
+        let heartbeat_msg = AppendEntriesMsg {
+            term,
+            leader_id,
+            prev_log_idx: 0,
+            prev_log_term_entries: vec![],
+            leader_commit: 0,
+        };
+        let stream_write = bincode::serialize(&heartbeat_msg).unwrap();
+
+        let mut buffer = [0u8; 1024];
+        let read = stream.read(&mut buffer).unwrap();
+        println!("revieved H34RTB33T {:?} ", &buffer[..read]);
+        
+        stream.write_all(stream_write);
+    }
+*/
+    // TODO 
+    pub async fn start_election(node: Node, node_state: Nodestate){
+        Node::self.current_term += 1;
+        Node::self.voted_for = some(self.node_id);
         let mut votes = 1;
 
         for node in nodes {
@@ -251,17 +248,17 @@ impl NodeState {
                 votes += 1;
 
                 if votes > (num_nodes / 2) {
-                    let Node::role = Leader;
+                    let Node::role = leader;
                     self.become_leader();
                 }
             }
         }
-
-        match self.state {
-            NodeState::Follower => {
+    }
+        /*match self.state {
+            nodestate::follower => {
                 // if timeout become candidate
             }
-            NodeState::Candidate => {
+            nodestate::candidate => {
                 for node in nodes {
                     start_election(node,node_state).;
                     
@@ -271,7 +268,7 @@ impl NodeState {
                 //thats our vote, if larger than cluster size, we become leader,
                 //if we see a higher term, become follower
             }
-            NodeState::Leader => {
+            nodestate::leader => {
                 if term >= current_term {
                     Node::become_follower;
                 }
@@ -280,10 +277,10 @@ impl NodeState {
                 // send empty Append Entries rpc to keep followers alive
                 // send not empty Append entries for log replication, thats the fun part.
                 // if it sees higher term, becomes follower, new leader election
-
             }
         }
-    }*/
+        */
+    
     // TODO
     /*
     // election times out based off randomixed timeout value
@@ -298,7 +295,6 @@ impl NodeState {
     }
 
     //invoked by leader
-    //
 
     pub fn append_entries(term: u64, leader_id: u64, prev_log_idx: u64, prev_log_term_entries: Vec<u64>, leader_commit: u64) -> bool { //term, success return variables
         if term < currentTerm {
@@ -324,9 +320,9 @@ impl NodeState {
         }
 
     }*/
+
     // we arent actually voting here, we are checking logs to get a "vote"
     // i will be doing this after leader election
-    //
     //
     // this is gonna be reliant off our async logs, and using our leader. 
     /*pub fn log_replication () {
@@ -340,13 +336,5 @@ impl NodeState {
             todo!("appending logic here for error");
         }
     }
-    // here, if we are a follower, and we havent revieved a heartbeat in 200ms, become candidate
-    pub fn leader_election(){
-        if Role::Follower {
-            if Node::noHeartBeat {
-                Node::Role = Candidate;
-                // then we start voting shit. just need this for the heartbeat.
-            }
-        }
-    }*/
-
+}*/
+}
