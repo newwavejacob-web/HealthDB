@@ -30,7 +30,8 @@ struct NodeState {
     next_index: u64,
     match_index: u64,
     
-    node_id: String
+    node_id: String,
+    peers: Vec<String>,
 }
 
 
@@ -80,37 +81,7 @@ enum RaftEvent {
 
 impl NodeState {
     //TODO urgent 
-    /*
-    pub fn request_vote(term: u64, candidate_id: u64, last_log_idx: u64, last_log_term: u64) ->  bool // currentTerm, voteGranted
-    {
-        if term < currentTerm {
-            return false;
-        }
-        if candidate_id == 0 {
-            return true;
-        }
-        if candidate_id != 0 {
-            // here is our actualy logic, we have to check to see if the candidate log is as up to date
-            // as the recievers log. 
-            // 
-            // what is our up to date logic again? we just update it haere to grant vote
-
-            return true;
-        }
-    }*/
-
-    //gott a use this as our main loop in where we decide what to handle on the server 
-    /*pub fn event_handler(&self, event: TcpStream) {
-        match event {// recieved channell 
-            handle_rpc(rpc) => {
-            }
-            handle_election(elec) => {
-            }
-            handle_heartbeat(hb) => {
-            }
-        }
-
-    }*/
+    
     //deserialize incoming bytes (into rpc structs)
     //do raft shit
     //serialize outcoming byte
@@ -180,9 +151,10 @@ impl NodeState {
     //pass nodes everywhere
     //if node is leader, then send heartbeat every like fucking 200 ms idk.
     //
-    //TODO TODO TODO i have to implement my tokio timer into here, stream + channel to listen on
-    //many conncurrent events
+    //I HAVE TO SEND EVERYTHING TO EVERYTHING, WE NEED MORE CONCURRENCY NOT JUST COMMUNCATION
 
+    // THIS IS MY tCP LISteNER TASK
+    //TODO have to make this my listener for RPC
     pub async fn rpc_handler(&self, event_tx: mpsc::Sender<RaftEvent>) {
         let listener = TcpListener::bind(...);
         loop {
@@ -192,8 +164,10 @@ impl NodeState {
             event_tx.send(RaftEvent::IncomingRpc(msg)).await;
         }
     }
+
+    // THIS IS MY TIMER TASK
     // this is our heartbeat
-    pub async fn election_timer(&self, event_tx: mpsc::Sender<RaftEvent>, reset_rx: mpsc::Receiver<()>){
+    pub async fn election_timer(&self, event_tx: mpsc::Sender<RaftEvent>, reset_rx: mpsc::Receiver<RaftEvent::Heartbeat>){
         loop {
             tokio::select! {
                 // this sleep block needs to eventually be our random election timeout 
@@ -209,12 +183,34 @@ impl NodeState {
             }
         }
     }
-    pub async fn start_leader_election(&self, event_tx: mpsc::Receiver<()>) {
+    pub async fn start_leader_election(&mut self) {
         loop {
-            if event_tx == RaftEvent::ElectionTimeout => {
-                self.role = Role::Candidate;
-                self.current_term += 1;
-                self.voted_for = Some(node_id);
+            self.role = Role::Candidate;
+            self.current_term += 1;
+            self.voted_for = Some(self.node_id.clone());
+            
+            let mut votes = 1;
+            let majority = (peers.len() + 1) / 2 + 1;
+            // gotta do something with the reciever here
+        }
+    }
+
+    // THIS IS MY MAIN LOOP
+    pub async fn node_loop(&self, event_rx: mpsc::Receiver<()>, event_tx: mpsc::Sender<RaftEvent>) {
+        loop {
+            match event_rx {
+                RaftEvent::ElectionTimeout => {
+                    start_leader_election();
+                }
+                RaftEvent::IncompingRPC => {
+                    rpc_handler();
+                }
+                RaftEvent::Heartbeat => {
+                    election_timer(); //???? isnt this wrong because it has to be a part of the
+                                      //function. or wait no it would work be cause WE ASR JUST
+                                      //SENDING THORUGH THE CHANNEL
+                }
+
             }
         }
     }
@@ -249,77 +245,50 @@ impl NodeState {
 
                 if votes > (num_nodes / 2) {
                     let Node::role = leader;
-                    self.become_leader();
                 }
             }
         }
     }
-        /*match self.state {
-            nodestate::follower => {
-                // if timeout become candidate
+
+    pub async fn state_rules(&self, mpsc::Sender<RaftEvent>, mpsc::Reciever<RaftEvent>){
+        if commit_index > last_applied {
+            last_applied += 1;
+            logs::append_log(log[last_applied]);
+        }
+
+        match self.state {
+            node::follower => {
+
             }
-            nodestate::candidate => {
+            node::candidate => {
                 for node in nodes {
-                    start_election(node,node_state).;
-                    
+                    start_election(node,node_state);
                 }
                 //start election, send request_vode rpc
                 //count number of responses, based off our up to date and rpc rules,
                 //thats our vote, if larger than cluster size, we become leader,
                 //if we see a higher term, become follower
             }
-            nodestate::leader => {
+            node::leader => {
                 if term >= current_term {
                     Node::become_follower;
                 }
-                log_replication();
-                AppendEntriesMsg();
+                send_heartbeat();
+//                log_replication();
                 // send empty Append Entries rpc to keep followers alive
                 // send not empty Append entries for log replication, thats the fun part.
                 // if it sees higher term, becomes follower, new leader election
             }
         }
-        */
-    
-    // TODO
-    /*
-    // election times out based off randomixed timeout value
-    pub fn election_timeout () {
-        sleep(self.election_timeout).await;
-        let now = current_time_millis();
-        let last = self.last_heartbeat.load(Ordering::Relaxed);
-
-        if now - last > ELECTION_TIMEOUT {
-            self.become_candidate();
-        }
     }
+}
 
+    /*
+    // TODO
+
+    // LOG REPLICATION
     //invoked by leader
 
-    pub fn append_entries(term: u64, leader_id: u64, prev_log_idx: u64, prev_log_term_entries: Vec<u64>, leader_commit: u64) -> bool { //term, success return variables
-        if term < currentTerm {
-            return false;
-        }
-        if log[prev_log_idx] != prev_log_term_entries[what index??]{
-            return false;
-        }
-        // if log entries conflict, we have to delete the existing entry and all that follow 
-
-        for log_idx in log {
-            if prev_log_idx == log_idx {
-                // delete logic here
-                // literally just deleting the file tho. iterate until we delete all after the entry
-            }
-        }  
-
-        logs::append_log(); // create new log shit. i need them the same not one for both delete and
-        logs::log::set;
-
-        if leader_commit > commit_index {
-            let commit_index = min(leader_commit, last_applied /* index of last new entry, wouldnt that be last applied*/);
-        }
-
-    }*/
 
     // we arent actually voting here, we are checking logs to get a "vote"
     // i will be doing this after leader election
@@ -337,4 +306,3 @@ impl NodeState {
         }
     }
 }*/
-}
