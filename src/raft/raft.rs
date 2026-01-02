@@ -1,5 +1,6 @@
 // this is wherer im gonna start building raft shit is gonna be lit'
-use std::net::{TcpStream, TcpListener};
+use tokio::net::{TcpStream, TcpListener};
+use tokio::io::{AsyncReadExt, AsynncWriteExt};
 use std::fs::File;
 use std::io::{Read, Write};
 use serde::{Serialize, Deserialize};
@@ -234,22 +235,7 @@ impl NodeState {
     }
 */
     // TODO 
-    pub async fn start_election(node: Node, node_state: Nodestate){
-        Node::self.current_term += 1;
-        Node::self.voted_for = some(self.node_id);
-        let mut votes = 1;
-
-        for node in nodes {
-            if vote_success && response.term = self.current_term {
-                votes += 1;
-
-                if votes > (num_nodes / 2) {
-                    let Node::role = leader;
-                }
-            }
-        }
-    }
-
+    
     pub async fn state_rules(&self, mpsc::Sender<RaftEvent>, mpsc::Reciever<RaftEvent>){
         if commit_index > last_applied {
             last_applied += 1;
