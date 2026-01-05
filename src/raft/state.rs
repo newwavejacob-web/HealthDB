@@ -1,33 +1,54 @@
 // this is basically our rule book, they sshow thsi shti ib the algorithm
 // NOdeState, Role
+use crate::raft::messages::LogEntry;
 
-
-enum Role {
+#[derive(Debug, Clone, PartialEq)]
+pub enum Role {
     Leader,
     Follower,
     Candidate,
 }
 
 // our in house per node storage
-struct NodeState {
-    role: Role,
-    current_term: u64,
-    voted_for: Option<u64>,
+pub struct NodeState {
+    pub role: Role,
+    pub current_term: u64,
+    pub voted_for: Option<u64>,
               
-    log: Vec<u64>, // is this even waht we want it as or do we want it as a vec of structs
+    pub log: Vec<LogEntry>, // is this even waht we want it as or do we want it as a vec of structs
          
     //volState
-    commit_index: u64,
-    last_applied: u64,
+    pub commit_index: u64,
+    pub last_applied: u64,
 
     //leader VolState
-    next_index: u64,
-    match_index: u64,
+    pub next_index: u64,
+    pub match_index: u64,
     
-    node_id: String,
-    peers: Vec<String>,
+    pub node_id: u64,
+    pub address: String,
+    pub peers: Vec<String>,
 }
-pub async fn state_rules(&self, mpsc::Sender<RaftEvent>, mpsc::Reciever<RaftEvent>){
+
+impl NodeState {
+    pub fn new(node_id: u64, address: String, peers: Vec<String>) -> NodeState {
+        NodeState {
+            role: Role::Follower,
+            current_term: 0,
+            voted_for: None,
+            log: Vec::new(), // have to figure this out.
+            commit_index: 0,
+            last_applied: 0,
+            next_index: 0,
+            match_index: 0,
+            node_id,
+            address,
+            peers,
+        }
+    }
+}
+// basically everything we are coding is one big state machine
+/*pub async fn state_rules(&self, mpsc::Sender<RaftEvent>, mpsc::Reciever<RaftEvent>){
     if commit_index > last_applied {
         last_applied += 1;
         logs::append_log(log[last_applied]);
@@ -57,4 +78,4 @@ pub async fn state_rules(&self, mpsc::Sender<RaftEvent>, mpsc::Reciever<RaftEven
             // if it sees higher term, becomes follower, new leader election
         }
     }
-}
+}*/

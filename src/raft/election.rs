@@ -1,5 +1,5 @@
 //vote handliong, elecition logic
-
+/*
     pub async fn election_timer(&self, event_tx: mpsc::Sender<RaftEvent>, reset_rx: mpsc::Receiver<RaftEvent::Heartbeat>){
         loop {
             tokio::select! {
@@ -25,14 +25,38 @@
             let mut votes = 1;
             let majority = (peers.len() + 1) / 2 + 1;
 
-            for peer in peers {
-                let resp = send_rpc(peer, RequestVote{...}).await;
-                if resp.voted { votes + = 1; }
-            }
-            if votes > majority { Become_leader(); }
+            let (tx, mut rx) = mpsc::channell(peers.len());
 
-            loop { sleep(100ms)a.wait;
-            fo:}
+            for peer in self.peers {
+                let request = RequestVoteMsg {
+                    term: self.current_term,
+                    candidate_id: self.node_id,
+                    last_log_idx: self.log.len() as u64,
+                    last_log_term: self.log.last().map(|e| e.term).unwrap_or(0),
+                };
+
+                let tx = tx.clone();
+                let peer = peer.clone();
+
+                tokio::spawn(async move {
+                    if let Ok(response) = send_request_vote(&self, request).await {
+                        tx.send(response).await.ok();
+                    }
+                });
+            }
+
+            if let Ok(response) => rx.recv().await {
+                if response.current_term > self.current_term {
+                    self.role = Role::Follower;
+                    self.current_term = response.current_term;
+                }
+                if response.voted && response.current_term == self.current_term {
+                    votes += 1;
+                    if votes >= majority;
+                    self.role = Role::Leader;
+                    self.become_leader();
+                }
+            }
             // gotta do something with the reciever here
         }
     }
@@ -57,8 +81,24 @@
         }
     }
 
-    pub async fn become_leader(){}
+    pub async fn become_leader(){
+        // when i become a leader i have to send my Heartbeat
+        // send empty append entries every like 200 ms.
+        let heartbeat = AppendEntriesMsg {
+            term: 0,
+            leader_id: 0,
+            prev_log_idx: 0,
+            prev_log_term_entries: vec![], 
+            leader_commit: 0,
+        }
+        // and i have to keep sending the heartbeat
+
+        for peer in peers {
+            send_rpc(heartbeat);
+        }
+    }
 
     pub async fn become_candidate(){}
 
     pub async fn become_follower(){}
+*/
