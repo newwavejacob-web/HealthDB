@@ -3,23 +3,12 @@
 //research her this is THE MAIN FUCKNIG SHIT
 //I HAVE TO SEND EVERYTHING TO EVERYTHING, WE NEED MORE CONCURRENCY NOT JUST COMMUNCATION
 
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, TcpListener};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, oneshot};
 use crate::raft::messages::RaftMsg;
 use std::error::Error;
 
-// THIS IS MY tCP LISteNER TASK
-//TODO have to make this my listener for RPC
-pub async fn rpc_handler(addr: &str, event_tx: mpsc::Sender<RaftEvent>) {
-    let listener = TcpListener::bind(addr).await.unwrap();
-    loop {
-        let (stream, addr) = listener.accept().await.unwrap();
-        println!("Connecton from {}", addr);
-        let tx = event_tx.clone();
-        tokio::spawn(handle_connection(stream, tx));
-    }
-}
 
 pub async fn send_rpc(addr: &str, msg: RaftMsg) -> Result<RaftMsg, Box<dyn Error>> {
     let mut stream = TcpStream::connect(addr).await?;
@@ -32,6 +21,14 @@ pub async fn send_rpc(addr: &str, msg: RaftMsg) -> Result<RaftMsg, Box<dyn Error
 
     read_rpc(&mut stream).await 
     
+}
+
+pub async fn write_rpc(stream: &mut TcpStream, msg: RaftMsg) {
+    let bytes = bincode::serialize(&msg).unwrap();
+    let len = bytes.len() as u32;
+
+    stream.write_all(&len.to_be_bytes()).await.unwrap();
+    stream.write_all(&bytes).await;
 }
 pub async fn read_rpc(stream: &mut TcpStream) -> Result<RaftMsg, Box<dyn Error>> {
     let mut len_buf = [0u8; 4];
@@ -46,6 +43,18 @@ pub async fn read_rpc(stream: &mut TcpStream) -> Result<RaftMsg, Box<dyn Error>>
     
 }
 
+// THIS IS MY tCP LISteNER TASK
+//TODO have to make this my listener for RPC
+/*pub async fn run_listener(addr: &str, event_tx: mpsc::Sender<RaftEvent>) {
+    let listener = TcpListener::bind(addr).await.unwrap();
+    loop {
+        let (stream, addr) = listener.accept().await.unwrap();
+        println!("Connecton from {}", addr);
+        let tx = event_tx.clone();
+        tokio::spawn(handle_connection(stream, tx));
+    }
+}
+// use this channel approach from massively conncurent rpcs. work on this when you have time.
 pub async fn handle_connection(
     mut stream: TcpStream,
     event_tx: mpsc::Sender<(RaftMsg, oneshot::Sender<RaftMsg>)>
@@ -65,4 +74,4 @@ pub async fn handle_connection(
         let _ = stream.write_all(&len.to_be_bytes()).await;
         let _ = stream.write_all(&bytes).await;
     }
-}
+}*/

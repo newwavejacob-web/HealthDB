@@ -47,35 +47,7 @@ impl NodeState {
         }
     }
 }
-// basically everything we are coding is one big state machine
-/*pub async fn state_rules(&self, mpsc::Sender<RaftEvent>, mpsc::Reciever<RaftEvent>){
-    if commit_index > last_applied {
-        last_applied += 1;
-        logs::append_log(log[last_applied]);
-    }
+    // we already have the WAL part of this done.
+    pub async fn replication() {}
 
-    match self.state {
-        node::follower => {
 
-        }
-        node::candidate => {
-            for node in nodes {
-                start_election(node,node_state);
-            }
-            //start election, send request_vode rpc
-            //count number of responses, based off our up to date and rpc rules,
-            //thats our vote, if larger than cluster size, we become leader,
-            //if we see a higher term, become follower
-        }
-        node::leader => {
-            if term >= current_term {
-                Node::become_follower;
-            }
-            send_heartbeat();
-//                log_replication();
-            // send empty Append Entries rpc to keep followers alive
-            // send not empty Append entries for log replication, thats the fun part.
-            // if it sees higher term, becomes follower, new leader election
-        }
-    }
-}*/

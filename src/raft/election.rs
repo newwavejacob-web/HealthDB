@@ -1,104 +1,66 @@
 //vote handliong, elecition logic
-/*
-    pub async fn election_timer(&self, event_tx: mpsc::Sender<RaftEvent>, reset_rx: mpsc::Receiver<RaftEvent::Heartbeat>){
-        loop {
-            tokio::select! {
-                // this sleep block needs to eventually be our random election timeout 
-                _ = sleep(Duration::from_millis(300)) => {
-                    println("Election start, no reset");
-                    //or 
-                    //event_tx.send(RaftEvent::ElectionTimeout).await;
-                }
-                _ = reset_rx.recv() => {
-                    println!("election reset due to leader");
-                    //reset loop here
-                } 
-            }
-        }
-    }
-    pub async fn start_leader_election(&mut self) {
-        loop {
-            self.role = Role::Candidate;
-            self.current_term += 1;
-            self.voted_for = Some(self.node_id.clone());
-            
-            let mut votes = 1;
-            let majority = (peers.len() + 1) / 2 + 1;
+use crate::raft::{NodeState, Role, RequestVoteMsg, send_rpc, AppendEntriesMsg, RequestVoteResponse, AppendEntriesResponse, RaftMsg};
+use crate::raft::RaftMsg::{RequestVote, AppendEntries};
+use tokio::time::timeout;
 
-            let (tx, mut rx) = mpsc::channell(peers.len());
 
-            for peer in self.peers {
-                let request = RequestVoteMsg {
-                    term: self.current_term,
-                    candidate_id: self.node_id,
-                    last_log_idx: self.log.len() as u64,
-                    last_log_term: self.log.last().map(|e| e.term).unwrap_or(0),
-                };
+    pub async fn start_leader_election(state: &mut NodeState) {
+        state.current_term += 1;
+        state.voted_for = Some(state.node_id.clone());
+        
+        let mut votes = 1;
+        let majority = (state.peers.len() + 1) / 2 + 1;
 
-                let tx = tx.clone();
-                let peer = peer.clone();
+        for peer in state.peers.clone() {
+            let request = RequestVote(RequestVoteMsg {
+                term: state.current_term,
+                candidate_id: state.node_id,
+                last_log_idx: state.log.len() as u64,
+                last_log_term: state.log.last().map(|e| e.term).unwrap_or(0),
+            });
 
-                tokio::spawn(async move {
-                    if let Ok(response) = send_request_vote(&self, request).await {
-                        tx.send(response).await.ok();
+            let req = request.clone();
+
+            match send_rpc(&peer, req).await {
+                Ok(RaftMsg::RequestVoteResponse(response)) => {
+                    if response.current_term > state.current_term {
+                        state.role = Role::Follower;
+                        state.current_term = response.current_term;
                     }
-                });
-            }
-
-            if let Ok(response) => rx.recv().await {
-                if response.current_term > self.current_term {
-                    self.role = Role::Follower;
-                    self.current_term = response.current_term;
+                    if response.voted && response.current_term == state.current_term {
+                        votes += 1;
+                        if votes >= majority {state.role = Role::Leader;}
+                    }
                 }
-                if response.voted && response.current_term == self.current_term {
-                    votes += 1;
-                    if votes >= majority;
-                    self.role = Role::Leader;
-                    self.become_leader();
-                }
-            }
-            // gotta do something with the reciever here
-        }
-    }
-
-    // THIS IS MY MAIN LOOP
-    pub async fn node_loop(&self, event_rx: mpsc::Receiver<()>, event_tx: mpsc::Sender<RaftEvent>) {
-        loop {
-            match event_rx {
-                RaftEvent::ElectionTimeout => {
-                    start_leader_election();
-                }
-                RaftEvent::IncompingRPC => {
-                    rpc_handler();
-                }
-                RaftEvent::Heartbeat => {
-                    election_timer(); //???? isnt this wrong because it has to be a part of the
-                                      //function. or wait no it would work be cause WE ASR JUST
-                                      //SENDING THORUGH THE CHANNEL
-                }
-
+                Err(e) => eprintln!("Error: {}", e),
+                _ => {}
             }
         }
     }
 
-    pub async fn become_leader(){
+    
+    pub async fn send_heartbeats(state: &NodeState, peers: &[String]){
         // when i become a leader i have to send my Heartbeat
         // send empty append entries every like 200 ms.
-        let heartbeat = AppendEntriesMsg {
+        let heartbeat = RaftMsg::AppendEntries(AppendEntriesMsg {
             term: 0,
             leader_id: 0,
             prev_log_idx: 0,
-            prev_log_term_entries: vec![], 
+            prev_log_term: 0,
+            entries: Vec::new(), 
             leader_commit: 0,
-        }
-        // and i have to keep sending the heartbeat
+        });
+        // and i have to keep sending the heartbeat, or i could just do that in my main timer loop.
+        // logic is kinda funky since i am directly using the select! loop to send heartbeats but
+        // to be honest it checks out. it works out really cleanly with my code cause select lets
+        // it so that if no special rpcs get sent but theres a leader we send a heartbeat to all.
 
-        for peer in peers {
-            send_rpc(heartbeat);
-        }
+            for peer in peers {
+                let hb = heartbeat.clone();
+                let p = peer.clone(); 
+                tokio::spawn(async move {
+                    let _ = send_rpc(&p, hb).await;
+                });
+            }
     }
 
-    pub async fn become_candidate(){}
-
-    pub async fn become_follower(){}
-*/
