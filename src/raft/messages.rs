@@ -9,7 +9,7 @@ pub struct AppendEntriesMsg {
     pub leader_id: u64,
     pub prev_log_idx: u64,
     pub prev_log_term: u64,
-    pub entries: Vec<u64>, 
+    pub entries: Vec<LogEntry>, 
     pub leader_commit: u64,
 }
 
@@ -81,44 +81,48 @@ pub fn handle_request_vote(state: &mut NodeState, req: RequestVoteMsg) -> Reques
 
 // this is our logic for how our follower nodes respond to the Append Entries msg.
 pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> AppendEntriesResponse{
- /*       if req.term > state.current_term {
+    if req.term > state.current_term {
         state.current_term = req.term;
         state.role = Role::Follower;
+        state.voted_for = None;
     }
     //1
     if req.term < state.current_term {
-        AppendEntriesResponse {
+        return AppendEntriesResponse {
             term: state.current_term,
             success: false,
-        }
+        };
     }
     //2
-    if state.log[prev_log_idx].term != prev_log_term {
-        AppendEntriesResponse {
-            term: state.current_term,
-            success: false,
+    if req.prev_log_idx > 0 {
+        let idx = (req.prev_log_idx - 1) as usize;
+        if state.log.len() <= idx || state.log[prev_log_idx].term != req.prev_log_term {
+            return AppendEntriesResponse {
+                term: state.current_term,
+                success: false,
+            };
         }
     }
-    //3
-    for i in log.len() {
-        if i >= leader_commit {
-            log.remove(i);
+    /*
+    for i in state.log.len() {
+        if i >= state.leader_commit {
+            state.log.remove(i);
         } 
-    } 
-    //4 
-let mut file = OpenOptions::new()
-        .append(true)
-        .open("log.txt")?;
-
-    file.write_all(format!("{:?}", entries).as_bytes())?;
-    // or 
-    state.log.push(entries);
+    } */
+    //3 and 4 
+    let start_index = req.prev_log_idx as usize;
+    state.log.truncate(start_index);
+    state.log.extend(req.entries);
 
     //5
     if req.leader_commit > state.commit_index {
-        state.commit_index = min(req.leader_commit, (prev_log_idx + entries.len()));
-    }*/
-    todo!()
+        state.commit_index = min(req.leader_commit, state.log.len() as u64);
+    }
+
+    AppendEntriesResponse {
+        current_term: state.current_term,
+        success: true,
+    }
 }
 
 pub fn handle_messages(state: &mut NodeState, msg: RaftMsg) -> RaftMsg {

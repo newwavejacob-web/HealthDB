@@ -1,4 +1,3 @@
-// GOAL IS TO GET A LOCK FREE VERISON WORKING by the end of 2025
 
 /*mod store;
 mod server;
@@ -79,6 +78,19 @@ async fn main() {
                     }
                 } 
             }
+            if state.commit_index > state.last_applied {
+                state.last_applied += 1;
+                state.log.push(msg.entries);
+            }
+            if state.role == Role::Leader {
+                for i in state.log {
+                    // but how do i handle the "majority of match_index[i] >= i " case?
+                    if state.log[i].term == state.current_term && i > state.commit_index {
+                        state.commit_index = i;
+                        return;
+                    }
+                }
+            }
         }
         
 //    }
@@ -90,4 +102,47 @@ async fn main() {
     logs::create_log(&db);
     server::run(db); */
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_append_entries_valid(){
+        let mut state = NodeState::new(1, "127.0.0.1:5001".into(), vec![]);
+        state.current_term = 1;
+
+        let req = AppendEntriesMsg {
+            term: 1,
+            leader_id: 2,
+            prev_log_idx: 0,
+            prev_log_term: 0,
+            entries: vec![LogEntry { term: 1, data: b"SET foo bar". to_vec()}],
+            leader_commit: 0,
+        };
+
+        let resp = handle_append_entries(&mut state, req);
+        assert!(resp.success);
+        assert_eq!(state.log.len(), 1);
+    }
+    
+    #[test]
+
+    fn test_append_entries_rejects(){
+        let mut state = NodeState::new(1, "127.0.0.1:5001".into(), vec![]);
+        state.current_term = 5;
+
+        let req = AppendEntriesMsg {
+            term: 3,
+            leader_id: 2,
+            prev_log_idx: 0,
+            prev_log_term: 0,
+            entries: vec![],
+            leader_commit: 0,
+        };
+
+        let resp = handle_append_entries(&mut state, req);
+        assert!(!resp.success);
+    }
 }

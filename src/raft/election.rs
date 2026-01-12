@@ -29,7 +29,11 @@ use tokio::time::timeout;
                     }
                     if response.voted && response.current_term == state.current_term {
                         votes += 1;
-                        if votes >= majority {state.role = Role::Leader;}
+                        if votes >= majority {
+                            state.role = Role::Leader;
+                            state.next_index.insert(peer.clone(), state.log.len() as u64 + 1);
+                            state.match_index.insert(peer.clone(), 0);
+                        }
                     }
                 }
                 Err(e) => eprintln!("Error: {}", e),
@@ -54,13 +58,29 @@ use tokio::time::timeout;
         // logic is kinda funky since i am directly using the select! loop to send heartbeats but
         // to be honest it checks out. it works out really cleanly with my code cause select lets
         // it so that if no special rpcs get sent but theres a leader we send a heartbeat to all.
+        for peer in peers {
+            let hb = heartbeat.clone();
+            let p = peer.clone(); 
+            tokio::spawn(async move {
+                let _ = send_rpc(&p, hb).await;
+            });
+        }
+    }
 
-            for peer in peers {
-                let hb = heartbeat.clone();
-                let p = peer.clone(); 
-                tokio::spawn(async move {
-                    let _ = send_rpc(&p, hb).await;
-                });
-            }
+    pub async fn log_replication(state: &mut NodeState, msg: AppendEntriesMsg) {
+        for peer in state.peers {
+            let p = peer.clone(); 
+            tokio::spawn(async move {
+                if let Ok(response) = send_rpc(&p, msg).await {
+                    if response.success {
+                        // update for leader somehow?? do i have to send something back over the
+                        // wire? im not really sure how log replication comes together 
+                    }
+                    if !response.success {
+                        state.next_index -= 1;
+                    }
+                }
+            });
+        }
     }
 
