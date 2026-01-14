@@ -96,7 +96,7 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
     //2
     if req.prev_log_idx > 0 {
         let idx = (req.prev_log_idx - 1) as usize;
-        if state.log.len() <= idx || state.log[prev_log_idx].term != req.prev_log_term {
+        if state.log.len() <= idx || state.log[idx].term != req.prev_log_term {
             return AppendEntriesResponse {
                 term: state.current_term,
                 success: false,
@@ -120,7 +120,7 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
     }
 
     AppendEntriesResponse {
-        current_term: state.current_term,
+        term: state.current_term,
         success: true,
     }
 }
@@ -138,4 +138,8 @@ pub fn handle_messages(state: &mut NodeState, msg: RaftMsg) -> RaftMsg {
         }
         _ => msg
     }
+}
+
+pub fn handle_append_response(state: &mut NodeState, msg: AppendEntriesResponse) {
+    
 }

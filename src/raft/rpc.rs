@@ -20,7 +20,6 @@ pub async fn send_rpc(addr: &str, msg: RaftMsg) -> Result<RaftMsg, Box<dyn Error
     stream.write_all(&bytes).await?;
 
     read_rpc(&mut stream).await 
-    
 }
 
 pub async fn write_rpc(stream: &mut TcpStream, msg: RaftMsg) {
@@ -40,7 +39,6 @@ pub async fn read_rpc(stream: &mut TcpStream) -> Result<RaftMsg, Box<dyn Error>>
 
     let response: RaftMsg = bincode::deserialize(&buf)?; 
     Ok(response) 
-    
 }
 
 // THIS IS MY tCP LISteNER TASK

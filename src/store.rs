@@ -31,6 +31,7 @@ pub fn delete(db: &Database, key: &str, log_flag: bool) -> bool {
     println!("store::del called with log_flag: {}", log_flag);
     if log_flag {
         logs::log_del(&key);
+        raft::replication::make_append_entries(state);
     }
         let mut map = db.lock().unwrap();
         map.remove(key).is_some()

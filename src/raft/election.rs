@@ -67,20 +67,5 @@ use tokio::time::timeout;
         }
     }
 
-    pub async fn log_replication(state: &mut NodeState, msg: AppendEntriesMsg) {
-        for peer in state.peers {
-            let p = peer.clone(); 
-            tokio::spawn(async move {
-                if let Ok(response) = send_rpc(&p, msg).await {
-                    if response.success {
-                        // update for leader somehow?? do i have to send something back over the
-                        // wire? im not really sure how log replication comes together 
-                    }
-                    if !response.success {
-                        state.next_index -= 1;
-                    }
-                }
-            });
-        }
-    }
+    
 
