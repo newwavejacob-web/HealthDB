@@ -31,6 +31,7 @@ pub struct RequestVoteResponse {
 pub struct AppendEntriesResponse {
     pub current_term: u64,
     pub success: bool,
+    pub next_index: u64,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogEntry {
@@ -122,6 +123,7 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
     AppendEntriesResponse {
         term: state.current_term,
         success: true,
+        next_index: 
     }
 }
 

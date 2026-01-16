@@ -80,7 +80,7 @@ async fn main() {
             }
             if state.commit_index > state.last_applied {
                 state.last_applied += 1;
-                state.log.push(msg.entries);
+                state.log.push(log_append[last_applied]);
             }
             if state.role == Role::Leader {
                 for i in state.log {

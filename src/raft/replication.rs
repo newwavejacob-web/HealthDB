@@ -1,14 +1,5 @@
 //TODO I HAVE TO FIGURE OUT THE LEADER PART OF APPEND ENTRIES
-todo!()
-    DO MY THREE STEPS
-
-    FIRST FIX THE APPEND ENTRIES RESPONSE HANDLING
-
-    THEN THE HOW THE RESPONSE EFFECTS THE state next index / match index, remember these are weird peer arrays
-
-    the we have to actually figure out our logic for calling it in when clients come in. 
-    /*
-     * whenever we call a client request to the database we append to WAL whenever that happens we append to our leader log and start log_replication followers recieve the properly log to update from leader, and respond back 
+     /* whenever we call a client request to the database we append to WAL whenever that happens we append to our leader log and start log_replication followers recieve the properly log to update from leader, and respond back 
      * once majority has replicated an entry, we advance the commit index.
      * once last applied works and every node as replicated commited entries, apply them to the
      * state machine
@@ -29,7 +20,7 @@ todo!()
             let mut match_count = 1;
             for (_peer, &matched) in &state.match_index {
                 if matched >= n {
-                    match_index += 1;
+                    match_count += 1;
                 }
             }
 
@@ -41,15 +32,28 @@ todo!()
             }
         }
     }
-    pub async fn log_replication(state: &mut NodeState, msg: AppendEntriesMsg) {
+    pub async fn log_replication(state: &mut NodeState, log_append: Vec<LogEntry>) {
         for peer in state.peers {
+            let next_idx = state.next_index.get(peer);
+            let match_idx = state.match_index.get(peer);
+
+            let msg = RaftMsg::AppendEntries(AppendEntriesMsg {
+                term: state.current_term,
+                leader_id: state.node_id,
+                prev_log_idx: next_idx - 1,
+                prev_log_term: state.log[next_idx].term,
+                entries: log_append, 
+                leader_commit: state.commit_index,
+            });
                 match send_rpc(&peer, msg).await {
                     Ok(RaftMsg::AppendEntriesResponse(response)) => {
                         if response.success {
-                            write_to_logs(state, );
+                            write_to_logs(state, peer, match_idx );
                         }
                         if !response.success {
-                            state.next_index[peer] -= 1;
+                            next_idx -= 1;
+                            state.next_index.delete(peer);
+                            state.next_index.insert(peer, next_idx);
                         }
                     }
                     Err(e) => eprintln!("Error: {}", e),

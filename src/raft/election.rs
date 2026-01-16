@@ -31,10 +31,10 @@ use tokio::time::timeout;
                         votes += 1;
                         if votes >= majority {
                             state.role = Role::Leader;
-                            state.next_index.insert(peer.clone(), state.log.len() as u64 + 1);
-                            state.match_index.insert(peer.clone(), 0);
                         }
                     }
+                    state.next_index.insert(peer.clone(), state.log.len() as u64 + 1);
+                    state.match_index.insert(peer.clone(), 0);
                 }
                 Err(e) => eprintln!("Error: {}", e),
                 _ => {}
@@ -64,6 +64,9 @@ use tokio::time::timeout;
             tokio::spawn(async move {
                 let _ = send_rpc(&p, hb).await;
             });
+            if state.role == Role::Leader {
+                replication::log_replication(state, log_append);
+            }
         }
     }
 
