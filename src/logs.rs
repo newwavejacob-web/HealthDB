@@ -23,7 +23,7 @@ pub fn create_log(db: &Database) {
     }
 }
 // call these in store.rs, when called it will append to the log file
-pub fn log_set(key: &str, value: &str) -> Result<(), Box<dyn Error>> {
+pub fn log_set(key: &str, value: &str, term: u64) -> Result<raft::messages::LogEntry, Box<dyn Error>> {
     println!("LOG_SET CALLED with key: {}, value: {}", key, value);
     let mut file = OpenOptions::new()
         .append(true)
@@ -40,9 +40,12 @@ pub fn log_set(key: &str, value: &str) -> Result<(), Box<dyn Error>> {
 
     file.write_all(format!("{} SET {} {} {}\n", byte_size, key, value, checksum).as_bytes())?;
     println!("Appended to log");
-    Ok(())
+    LogEntry {
+        data: format!("{} SET {} {} {}\n", byte_size, key, value, checksum).as_bytes(),
+        term, // ?? what is this how do i find this
+    }
 }
-pub fn log_del(key: &str) -> Result<(), Box<dyn Error>>  {
+pub fn log_del(key: &str, term: u64) -> Result<(), Box<dyn Error>>  {
     println!("LOG_Del CALLED with key: {} ", key);
     let mut file = OpenOptions::new()
         .append(true)
@@ -59,7 +62,13 @@ pub fn log_del(key: &str) -> Result<(), Box<dyn Error>>  {
 
     file.write_all(format!("{} DEL {} {}\n", byte_size, key, checksum).as_bytes())?;
     println!("Appended to log");
-    Ok(())
+    LogEntry {
+        data: format!("{} DEL {} {}\n", byte_size, key, checksum).as_bytes(),
+        term, // ?? what is this how do i find this
+              // i think i have to send the data over to the individual servers then manipulate it
+              // reasonably. Have to make sure the servers insert the term into the struct once we
+              // pass it over to raft. 
+    }
 }
 
 // need to use a flag to know whether we append or reload, add handling

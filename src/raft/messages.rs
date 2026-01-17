@@ -90,8 +90,9 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
     //1
     if req.term < state.current_term {
         return AppendEntriesResponse {
-            term: state.current_term,
+            current_term: state.current_term,
             success: false,
+            next_index: state.log.len() as u64 + 1,
         };
     }
     //2
@@ -99,31 +100,56 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
         let idx = (req.prev_log_idx - 1) as usize;
         if state.log.len() <= idx || state.log[idx].term != req.prev_log_term {
             return AppendEntriesResponse {
-                term: state.current_term,
+                current_term: state.current_term,
                 success: false,
+                next_index: state.log.len() as u64 + 1,
+            };
+        }
+
+        if state.log[idx].term != pre.prev_log_term {
+            let conflict_term = state.log[idx].term;
+            let mut conflict_idx = idx;
+            while conflict_idx > 0 && state.log[conflict_idx - 1].term == conflict_term {
+                conflict_idx - 1;
+            }
+            return AppendEntriesResponse {
+                current_term: state.current_term, 
+                success: false, 
+                next_index: (conflict_idx + 1) as u64,
             };
         }
     }
-    /*
-    for i in state.log.len() {
-        if i >= state.leader_commit {
-            state.log.remove(i);
-        } 
-    } */
+    
     //3 and 4 
-    let start_index = req.prev_log_idx as usize;
-    state.log.truncate(start_index);
-    state.log.extend(req.entries);
+    for (i, entry) in req.entries.iter().enumerate() {
+        let log_idx = req.prev_log_idx as usize + i;
+
+        if log_idx < state.log.len() {
+            if state.log[log_idx].term != entry.term {
+                state.log.truncate(log_idx);
+                state.log.extend(req.entries[i..].iter().cloned());
+                break;
+            }
+        }
+        else {
+            state.log.extend(req.entries[i..].iter().cloned());
+            break;
+        }
+    }
+
+    //let start_index = req.prev_log_idx as usize;
+    //state.log.truncate(start_index);
+    //state.log.extend(req.entries);
 
     //5
     if req.leader_commit > state.commit_index {
-        state.commit_index = min(req.leader_commit, state.log.len() as u64);
+        state.commit_index = std::cmp::min(req.leader_commit, state.log.len() as u64);
     }
 
     AppendEntriesResponse {
-        term: state.current_term,
+        current_term: state.current_term,
         success: true,
-        next_index: 
+        next_index: state.log.len() as u64 + 1,
     }
 }
 

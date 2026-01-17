@@ -18,6 +18,12 @@
 
         for n in (state.commit_index + 1)..=(state.log.len() as u64) {
             let mut match_count = 1;
+            let idx = (n - 1) as usize;
+
+            if state.log[idx].term != state.current_term {
+                continue;
+            }
+
             for (_peer, &matched) in &state.match_index {
                 if matched >= n {
                     match_count += 1;
@@ -25,7 +31,6 @@
             }
 
             let majority = (state.peers.len() + 1)/ 2 + 1;
-            let idx = (n - 1) as usize;
 
             if match_count >= majority && state.log[idx].term == state.current_term {
                 state.commit_index = n;
@@ -34,26 +39,30 @@
     }
     pub async fn log_replication(state: &mut NodeState, log_append: Vec<LogEntry>) {
         for peer in state.peers {
-            let next_idx = state.next_index.get(peer);
-            let match_idx = state.match_index.get(peer);
+            let next_idx = *state.next_index.get(&peer).unwrap_or(&1);
+            let prev_idx = next_idx - 1;
+            let prev_term = if prev_idx > 0 {
+                state.log.get(prev_idx - 1) as usize).map(|e| e.term).unwrap_or(0);
+
+            } else {
+                0
+            };
 
             let msg = RaftMsg::AppendEntries(AppendEntriesMsg {
                 term: state.current_term,
                 leader_id: state.node_id,
-                prev_log_idx: next_idx - 1,
-                prev_log_term: state.log[next_idx].term,
+                prev_log_idx: prev_idx, 
+                prev_log_term: prev_term,
                 entries: log_append, 
                 leader_commit: state.commit_index,
             });
                 match send_rpc(&peer, msg).await {
                     Ok(RaftMsg::AppendEntriesResponse(response)) => {
                         if response.success {
-                            write_to_logs(state, peer, match_idx );
+                            write_to_logs(state, peer.clone(), state.log.len() as u64);
                         }
                         if !response.success {
-                            next_idx -= 1;
-                            state.next_index.delete(peer);
-                            state.next_index.insert(peer, next_idx);
+                            state.next_index.insert(peer.clone(), response.next_index);
                         }
                     }
                     Err(e) => eprintln!("Error: {}", e),
