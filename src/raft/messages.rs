@@ -106,11 +106,11 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
             };
         }
 
-        if state.log[idx].term != pre.prev_log_term {
+        if state.log[idx].term != req.prev_log_term {
             let conflict_term = state.log[idx].term;
             let mut conflict_idx = idx;
             while conflict_idx > 0 && state.log[conflict_idx - 1].term == conflict_term {
-                conflict_idx - 1;
+                conflict_idx -= 1;
             }
             return AppendEntriesResponse {
                 current_term: state.current_term, 

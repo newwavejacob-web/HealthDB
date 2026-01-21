@@ -41,7 +41,7 @@ pub fn log_set(key: &str, value: &str, term: u64) -> Result<raft::messages::LogE
     file.write_all(format!("{} SET {} {} {}\n", byte_size, key, value, checksum).as_bytes())?;
     println!("Appended to log");
     LogEntry {
-        data: format!("{} SET {} {} {}\n", byte_size, key, value, checksum).as_bytes(),
+        data: format!("{} SET {} {} {}\n", byte_size, key, value, checksum).as_bytes().to_vec(),
         term, // ?? what is this how do i find this
     }
 }
@@ -63,7 +63,7 @@ pub fn log_del(key: &str, term: u64) -> Result<(), Box<dyn Error>>  {
     file.write_all(format!("{} DEL {} {}\n", byte_size, key, checksum).as_bytes())?;
     println!("Appended to log");
     LogEntry {
-        data: format!("{} DEL {} {}\n", byte_size, key, checksum).as_bytes(),
+        data: format!("{} DEL {} {}\n", byte_size, key, checksum).as_bytes().to_vec(),
         term, // ?? what is this how do i find this
               // i think i have to send the data over to the individual servers then manipulate it
               // reasonably. Have to make sure the servers insert the term into the struct once we

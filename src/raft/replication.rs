@@ -42,7 +42,7 @@
             let next_idx = *state.next_index.get(&peer).unwrap_or(&1);
             let prev_idx = next_idx - 1;
             let prev_term = if prev_idx > 0 {
-                state.log.get(prev_idx - 1) as usize).map(|e| e.term).unwrap_or(0);
+                state.log.get((prev_idx - 1) as usize).map(|e| e.term).unwrap_or(0);
 
             } else {
                 0
