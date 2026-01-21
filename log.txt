@@ -1,5 +1,0 @@
-8 SET j k 4100726402
-16 SET robby isgay 3383938842
-21 SET jacob fucksrobby 1548722377
-10 DEL robby 3364692203
-16 SET gay isrobby 3075091423
