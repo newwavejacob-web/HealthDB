@@ -37,7 +37,8 @@
             }
         }
     }
-    pub async fn log_replication(state: &mut NodeState) {
+// how do i implement concurrent handling 
+    pub async fn log_replication(state: &mut NodeState, event_rx: mspc<Reciever<oneshot::channel>, Sender<RaftMsg>> ) {
         for peer in state.peers {
             let next_idx = *state.next_index.get(&peer).unwrap_or(&1);
             let prev_idx = next_idx - 1;

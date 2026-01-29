@@ -14,10 +14,10 @@ pub fn new() -> Database {
 }
 
 pub fn set(db: &Database, key: String, value: String, log_flag: bool) {
-    println!("store::set called with log_flag: {}", log_flag);
+/*    println!("store::set called with log_flag: {}", log_flag);
     if log_flag {
-        replication::leader_write(logs::log_set(&key, &value).unwrap());
-    }
+        replication::persist_entry(logs::log_set(&key, &value).unwrap());
+    }*/
         let mut map = db.lock().unwrap();
         map.insert(key, value);
 }
@@ -28,10 +28,10 @@ pub fn get(db: &Database, key: &str) -> Option<String> {
     map.get(key).cloned() 
 }
 pub fn delete(db: &Database, key: &str, log_flag: bool) -> bool {
-    println!("store::del called with log_flag: {}", log_flag);
+   /* println!("store::del called with log_flag: {}", log_flag);
     if log_flag {
-        replication::leader_write(logs::log_del(&key));
-    }
+        replication::persist_entry(logs::log_del(&key));
+    }*/
         let mut map = db.lock().unwrap();
         map.remove(key).is_some()
 }

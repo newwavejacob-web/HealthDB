@@ -3,6 +3,7 @@ pub mod election;
 pub mod messages;
 pub mod rpc;
 pub mod state;
+pub mod replication;
 
 pub use messages::*;
 pub use rpc::*;
