@@ -1,6 +1,7 @@
 //vote handliong, elecition logic
 use crate::raft::{NodeState, Role, RequestVoteMsg, send_rpc, AppendEntriesMsg, RequestVoteResponse, AppendEntriesResponse, RaftMsg};
 use crate::raft::RaftMsg::{RequestVote, AppendEntries};
+use crate::raft::replication::log_replication;
 use tokio::time::timeout;
 
 
@@ -65,7 +66,7 @@ use tokio::time::timeout;
                 let _ = send_rpc(&p, hb).await;
             });
             if state.role == Role::Leader {
-                replication::log_replication(state, log_append);
+                replication::log_replication(state);
             }
         }
     }

@@ -1,16 +1,20 @@
 
-/*mod store;
+mod store;
 mod server;
 mod clients;
-mod logs; */
+mod logs; 
 mod raft;
 
 use raft::{NodeState, Role, RaftMsg, RequestVoteMsg, send_rpc, read_rpc, write_rpc, start_leader_election, handle_messages, send_heartbeats};
 use tokio::net::TcpListener;
 use tokio::time::{Duration, sleep};
+use tokio::io::{AsyncBufReadExt, BufReader, AsyncWriteExt};
+use clients::parse_command;
+
 
 #[tokio::main]
 async fn main() {
+    let db = store::new();
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
@@ -36,6 +40,8 @@ async fn main() {
 
     let listener = TcpListener::bind(&listener_addr).await.unwrap();
 
+    
+    let client_listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
     // start testing leader election,, fucking working on modulating too
     //if state.peers.len() <= 3 {
         /*
@@ -77,21 +83,23 @@ async fn main() {
                         write_rpc(&mut stream, response).await;
                     }
                 } 
+                client_result = client_listener.accept(), if state.role == Role::Leader => {
+                    let (stream, _) = client_result.unwrap();
+                    let mut reader = BufReader::new(stream);
+                    let mut line = String::new();
+
+                    if reader.read_line(&mut line).await.is_ok() {
+                        let response = parse_command(&mut state, line.trim(), &db).await;
+                        let mut stream = reader.into_inner();
+                        stream.write_all(response.as_bytes()).await.unwrap();
+                        stream.write_all(b"\n").await.unwrap();
+                    }
+                }
             }
             while state.commit_index > state.last_applied {
                 state.last_applied += 1;
                 let entry = &state.log[(state.last_applied - 1) as usize];
                 apply_entry(&db, entry);
-            }
-
-            if state.role == Role::Leader {
-                for i in state.log {
-                    // but how do i handle the "majority of match_index[i] >= i " case?
-                    if state.log[i].term == state.current_term && i > state.commit_index {
-                        state.commit_index = i;
-                        return;
-                    }
-                }
             }
         }
         

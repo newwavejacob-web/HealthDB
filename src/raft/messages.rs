@@ -129,7 +129,7 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
                 state.log.truncate(log_idx);
                 state.log.extend(req.entries[i..].iter().cloned());
                 for entry in &req.entries[i..] {
-                    follower_write(entry);
+                    persist_entry(entry);
                 }
                 break;
             }
@@ -137,7 +137,7 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
         else {
             state.log.extend(req.entries[i..].iter().cloned());
             for entry in &req.entries[i..] {
-                follower_write(entry);
+                persist_entry(entry);
             }
             break;
         }
@@ -176,3 +176,24 @@ pub fn handle_messages(state: &mut NodeState, msg: RaftMsg) -> RaftMsg {
 
 //pub fn handle_append_response(state: &mut NodeState, msg: AppendEntriesResponse) {
     
+pub fn apply_entry(db: &mut Database, entry: &LogEntry){
+     let data_str = String::from_utf8_lossy(&entry.data);
+     let parts: Vec<&str> = data_str.split_whitespace().collect();
+
+     if parts.len() < 3 { return; }
+     let key = parts[3];
+
+     match parts[1].to_uppercase().as_str() {
+        "SET" => {
+            if parts.len() >= 4 {
+                let value = parts[3..parts.len()-1].join(" ");
+                store::set(db, key, value, false);
+            }
+        }
+        "DEL" => {
+            let key = parts[2];
+            store::delete(db, key, false);
+        }
+        _ => {}
+     }
+}

@@ -91,7 +91,7 @@
         Ok(())
     }
 
-pub fn apply_entry(db: &mut Database, entry: &LogEntry){
+/*pub fn apply_entry(db: &mut Database, entry: &LogEntry){
      let data_str = String::from_utf8_lossy(&entry.data);
      let parts: Vec<&str> = data_str.split_whitespace().collect();
 
@@ -111,4 +111,4 @@ pub fn apply_entry(db: &mut Database, entry: &LogEntry){
         }
         _ => {}
      }
-}
+}*/                                                                                                                                                                                                                     
