@@ -6,7 +6,7 @@ use std::net::TcpStream;
 use crate::store::{self, Database};
 
 
-pub fn read_stream(mut stream: TcpStream, db: Database){ 
+pub fn read_stream(state: NodeState, mut stream: TcpStream, db: Database){ 
 
     let reader = BufReader::new(stream.try_clone().unwrap());
 
@@ -22,7 +22,7 @@ pub fn read_stream(mut stream: TcpStream, db: Database){
         stream.write_all(b"\n").unwrap();
     }
 }
-pub fn parse_command(command: &str, db: &Database) -> String {
+pub async fn parse_command(state:&mut NodeState, command: &str, db: &Database) -> String {
     
 //TODO update parsing to serialization in serde
     let parts: Vec<&str> = command.split_whitespace().collect();
@@ -36,11 +36,34 @@ pub fn parse_command(command: &str, db: &Database) -> String {
             if parts.len() < 3 {
                 return "ERROR: SET requires key and value".to_string();
             }
+            if state.role != Role::Leader {
+                return "ERROR: not leader".to_string();
+            }
+
             let key = parts[1].to_string();
             let value = parts[2..].join(" ");
             let flag = true;
-            store::set(db, key, value,flag);
-            "OK".to_string()
+
+            let entry = logs::log_set(&key, &value, state.current_term);
+            let entry_index = state.log.len() as u64 + 1;
+
+            state.log.push(entry.clone()); 
+            persist_entry(&entry);
+
+            log_replication(state).await;
+
+
+            while state.commit_index > state.last_applied {
+                state.last_applied += 1;
+                apply_entry(db, & state.log[(state.last_applied - 1) as usize ]);
+            }
+
+            if state.commit_index >= entry_index {
+                "OK".to_string()
+            }
+            else {
+                "ERROR: failed to reach majority".to_string()
+            }
         }
         "GET" => {
             if parts.len() < 2 {
@@ -58,18 +81,30 @@ pub fn parse_command(command: &str, db: &Database) -> String {
                 return "ERROR: DEL requires key".to_string();
             }
             let key = parts[1];
-            let flag = true;
 
+            let entry = logs::log_del(&key, state.current_term);
+            let entry_index = state.log.len() as u64 + 1;
+
+            state.log.push(entry.clone()); 
+            persist_entry(&entry);
+
+            log_replication(state).await;
+
+
+            while state.commit_index > state.last_applied {
+                state.last_applied += 1;
+                apply_entry(db, & state.log[(state.last_applied - 1) as usize ]);
+            }
+
+            if state.commit_index >= entry_index {
+                key.to_string()
+            }
+            else {
+                "ERROR: failed to reach majority".to_string()
+            }
             // not sure if this is an edge case, but our WAL stores delete entries that aren't
             // true, aka NIL. this is because im logging before it do the actual operation,
             // so i cant know it its right or wrong before hand.
-            if store::delete(&db.clone(), key, flag){
-                key.to_string()
-            }                    
-            else {
-                "NIL".to_string()
-            }
-
         }
         _ => format!("ERROR: unknown command '{}'", parts[0]),
     }

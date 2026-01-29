@@ -1,6 +1,7 @@
 // this is basically our rule book, they sshow thsi shti ib the algorithm
 // NOdeState, Role
 use crate::raft::messages::LogEntry;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Role {

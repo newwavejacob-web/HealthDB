@@ -128,11 +128,17 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
             if state.log[log_idx].term != entry.term {
                 state.log.truncate(log_idx);
                 state.log.extend(req.entries[i..].iter().cloned());
+                for entry in &req.entries[i..] {
+                    follower_write(entry);
+                }
                 break;
             }
         }
         else {
             state.log.extend(req.entries[i..].iter().cloned());
+            for entry in &req.entries[i..] {
+                follower_write(entry);
+            }
             break;
         }
     }
@@ -168,6 +174,5 @@ pub fn handle_messages(state: &mut NodeState, msg: RaftMsg) -> RaftMsg {
     }
 }
 
-pub fn handle_append_response(state: &mut NodeState, msg: AppendEntriesResponse) {
+//pub fn handle_append_response(state: &mut NodeState, msg: AppendEntriesResponse) {
     
-}

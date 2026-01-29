@@ -78,10 +78,12 @@ async fn main() {
                     }
                 } 
             }
-            if state.commit_index > state.last_applied {
+            while state.commit_index > state.last_applied {
                 state.last_applied += 1;
-                state.log.push(log_append[last_applied]);
+                let entry = &state.log[(state.last_applied - 1) as usize];
+                apply_entry(&db, entry);
             }
+
             if state.role == Role::Leader {
                 for i in state.log {
                     // but how do i handle the "majority of match_index[i] >= i " case?

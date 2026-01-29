@@ -37,36 +37,78 @@
             }
         }
     }
-    pub async fn log_replication(state: &mut NodeState, log_append: Vec<LogEntry>) {
+    pub async fn log_replication(state: &mut NodeState) {
         for peer in state.peers {
             let next_idx = *state.next_index.get(&peer).unwrap_or(&1);
             let prev_idx = next_idx - 1;
             let prev_term = if prev_idx > 0 {
                 state.log.get((prev_idx - 1) as usize).map(|e| e.term).unwrap_or(0);
-
             } else {
                 0
             };
+
+            let entries: Vec<LogEntry> = state.log
+                .iter()
+                .skip((next_idx - 1) as usize)
+                .cloned()
+                .collect();
 
             let msg = RaftMsg::AppendEntries(AppendEntriesMsg {
                 term: state.current_term,
                 leader_id: state.node_id,
                 prev_log_idx: prev_idx, 
                 prev_log_term: prev_term,
-                entries: log_append, 
+                entries, 
                 leader_commit: state.commit_index,
             });
-                match send_rpc(&peer, msg).await {
-                    Ok(RaftMsg::AppendEntriesResponse(response)) => {
-                        if response.success {
-                            write_to_logs(state, peer.clone(), state.log.len() as u64);
-                        }
-                        if !response.success {
-                            state.next_index.insert(peer.clone(), response.next_index);
-                        }
+
+            match send_rpc(&peer, msg).await {
+                Ok(RaftMsg::AppendEntriesResponse(response)) => {
+                    if response.success {
+                        write_to_logs(state, peer.clone(), state.log.len() as u64);
                     }
-                    Err(e) => eprintln!("Error: {}", e),
-                    _ => {}
+                    if !response.success {
+                        state.next_index.insert(peer.clone(), response.next_index);
+                    }
                 }
+                Err(e) => eprintln!("Error: {}", e),
+                _ => {}
+            }
         }
     }
+    
+    // this actually appends our nodestate log to file.
+    pub async fn persist_entry(/*state: NodeState,*/ log: &LogEntry) -> std::io::Result<()> {
+        //if state.role != Role::Leader { return; } 
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("log.txt")?;
+        
+        //state.log.push(log.clone());
+        file.write_all(&log.data)?;
+        println!("Appended to log");
+        Ok(())
+    }
+
+pub fn apply_entry(db: &mut Database, entry: &LogEntry){
+     let data_str = String::from_utf8_lossy(&entry.data);
+     let parts: Vec<&str> = data_str.split_whitespace().collect();
+
+     if parts.len() < 3 { return; }
+     let key = parts[3];
+
+     match parts[1].to_uppercase().as_str() {
+        "SET" => {
+            if parts.len() >= 4 {
+                let value = parts[3..parts.len()-1].join(" ");
+                store::set(db, key, value, false);
+            }
+        }
+        "DEL" => {
+            let key = parts[2];
+            store::delete(db, key, false);
+        }
+        _ => {}
+     }
+}

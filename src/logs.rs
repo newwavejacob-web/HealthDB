@@ -23,11 +23,15 @@ pub fn create_log(db: &Database) {
     }
 }
 // call these in store.rs, when called it will append to the log file
-pub fn log_set(key: &str, value: &str, term: u64) -> Result<raft::messages::LogEntry, Box<dyn Error>> {
+pub fn log_set(key: &str, value: &str, term: u64) -> LogEntry {
     println!("LOG_SET CALLED with key: {}, value: {}", key, value);
-    let mut file = OpenOptions::new()
+/*    let mut file = OpenOptions::new()
         .append(true)
         .open("log.txt")?;
+
+
+    file.write_all(format!("{} SET {} {} {}\n", byte_size, key, value, checksum).as_bytes())?;
+    println!("Appended to log");*/
 
     let mut hasher = Hasher::new();
     let file_write = format!("SET {} {}\n", key, value);  
@@ -38,19 +42,21 @@ pub fn log_set(key: &str, value: &str, term: u64) -> Result<raft::messages::LogE
     let checksum = hasher.finalize();
     println!("CRC32 checksum: {}", checksum); 
 
-    file.write_all(format!("{} SET {} {} {}\n", byte_size, key, value, checksum).as_bytes())?;
-    println!("Appended to log");
     LogEntry {
         data: format!("{} SET {} {} {}\n", byte_size, key, value, checksum).as_bytes().to_vec(),
         term, // ?? what is this how do i find this
     }
 }
-pub fn log_del(key: &str, term: u64) -> Result<(), Box<dyn Error>>  {
+pub fn log_del(key: &str, term: u64) -> LogEntry  {
     println!("LOG_Del CALLED with key: {} ", key);
-    let mut file = OpenOptions::new()
+/*    let mut file = OpenOptions::new()
         .append(true)
         .open("log.txt")?;
     
+
+    file.write_all(format!("{} DEL {} {}\n", byte_size, key, checksum).as_bytes())?;
+    println!("Appended to log");
+*/
     let mut hasher = Hasher::new();
     let file_write = format!("DEL {}\n", key);
     let byte_size = file_write.len();
@@ -60,8 +66,6 @@ pub fn log_del(key: &str, term: u64) -> Result<(), Box<dyn Error>>  {
     let checksum = hasher.finalize();
     println!("CRC32 checksum: {}", checksum); 
 
-    file.write_all(format!("{} DEL {} {}\n", byte_size, key, checksum).as_bytes())?;
-    println!("Appended to log");
     LogEntry {
         data: format!("{} DEL {} {}\n", byte_size, key, checksum).as_bytes().to_vec(),
         term, // ?? what is this how do i find this
