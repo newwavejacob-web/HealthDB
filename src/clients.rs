@@ -1,12 +1,13 @@
 // this is my client handling file 
 
-
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use crate::store::{self, Database};
+use crate::raft::{NodeState, Role, LogEntry, persist_entry, log_replication, apply_entry};
+use crate::logs;
 
 
-pub fn read_stream(state: NodeState, mut stream: TcpStream, db: Database){ 
+/*pub fn read_stream(state: NodeState, mut stream: TcpStream, db: Database){ 
 
     let reader = BufReader::new(stream.try_clone().unwrap());
 
@@ -21,7 +22,7 @@ pub fn read_stream(state: NodeState, mut stream: TcpStream, db: Database){
         stream.write_all(response.as_bytes()).unwrap();
         stream.write_all(b"\n").unwrap();
     }
-}
+}*/
 pub async fn parse_command(state:&mut NodeState, command: &str, db: &Database) -> String {
     
 //TODO update parsing to serialization in serde
@@ -50,7 +51,7 @@ pub async fn parse_command(state:&mut NodeState, command: &str, db: &Database) -
             state.log.push(entry.clone()); 
             persist_entry(&entry);
 
-            log_replication(state).await;
+            log_replication(mut state).await;
 
 
             while state.commit_index > state.last_applied {
@@ -88,7 +89,7 @@ pub async fn parse_command(state:&mut NodeState, command: &str, db: &Database) -
             state.log.push(entry.clone()); 
             persist_entry(&entry);
 
-            log_replication(state).await;
+            log_replication(mut state).await;
 
 
             while state.commit_index > state.last_applied {

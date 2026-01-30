@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::store::Database;
 use crate::clients;
 
-pub fn run(db: Database) {
+/*pub fn run(db: Database) {
 
     let listener = TcpListener::bind("127.0.0.1:6379").unwrap();
     println!("db listening on 127.0.0.1:6379");
@@ -24,4 +24,4 @@ pub fn run(db: Database) {
             Err(e) => eprintln!("Connection failed: {}", e),
         }
     }
-}
+}*/

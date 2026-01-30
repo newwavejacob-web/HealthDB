@@ -4,6 +4,9 @@
      * once last applied works and every node as replicated commited entries, apply them to the
      * state machine
      */
+use std::fs::OpenOptions;
+use std::io::Write;
+use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, send_rpc};
 
     // here im gonna actually write the fault tolerant logs to Database
     pub fn write_to_logs(state: &mut NodeState, peer: &str, matched_to: u64){
@@ -38,12 +41,12 @@
         }
     }
 // how do i implement concurrent handling 
-    pub async fn log_replication(state: &mut NodeState, event_rx: mspc<Reciever<oneshot::channel>, Sender<RaftMsg>> ) {
+    pub async fn log_replication(state: &mut NodeState) {
         for peer in state.peers {
             let next_idx = *state.next_index.get(&peer).unwrap_or(&1);
             let prev_idx = next_idx - 1;
             let prev_term = if prev_idx > 0 {
-                state.log.get((prev_idx - 1) as usize).map(|e| e.term).unwrap_or(0);
+                state.log.get((prev_idx - 1) as usize).map(|e| e.term).unwrap_or(0)
             } else {
                 0
             };

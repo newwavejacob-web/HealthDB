@@ -66,7 +66,7 @@ use tokio::time::timeout;
                 let _ = send_rpc(&p, hb).await;
             });
             if state.role == Role::Leader {
-                replication::log_replication(state);
+                log_replication(mut state);
             }
         }
     }

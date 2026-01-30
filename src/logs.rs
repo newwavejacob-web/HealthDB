@@ -1,5 +1,6 @@
 use crate::store::Database;
 use crate::store;
+use crate::raft::LogEntry;
 
 use std::fs::{OpenOptions, File};
 use std::io::{BufRead, BufReader, Write};

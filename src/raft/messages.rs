@@ -2,6 +2,8 @@
 //always remember to modulate. it will help you think about the problem clearer
 use crate::raft::{NodeState, Role, send_rpc};
 use serde::{Serialize, Deserialize};
+use crate::raft::replication::persist_entry;
+use crate::store::{self, Database};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppendEntriesMsg {
@@ -176,7 +178,7 @@ pub fn handle_messages(state: &mut NodeState, msg: RaftMsg) -> RaftMsg {
 
 //pub fn handle_append_response(state: &mut NodeState, msg: AppendEntriesResponse) {
     
-pub fn apply_entry(db: &mut Database, entry: &LogEntry){
+pub fn apply_entry(db: &Database, entry: &LogEntry){
      let data_str = String::from_utf8_lossy(&entry.data);
      let parts: Vec<&str> = data_str.split_whitespace().collect();
 
