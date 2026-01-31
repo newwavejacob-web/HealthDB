@@ -9,7 +9,7 @@ use std::io::Write;
 use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, send_rpc};
 
     // here im gonna actually write the fault tolerant logs to Database
-    pub fn write_to_logs(state: &mut NodeState, peer: &str, matched_to: u64){
+    pub fn write_to_logs(state: &mut NodeState, peer: String, matched_to: u64){
         state.match_index.insert(peer.to_string(), matched_to);
         state.next_index.insert(peer.to_string(), matched_to + 1);
 

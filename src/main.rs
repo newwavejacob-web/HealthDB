@@ -1,3 +1,79 @@
+/// actually storage operations??
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use crate::logs;
+
+/*pub struct Database {
+    db: Arc<Mutex<HashMap<String, String>>>,// isLoggable: bool,} */
+                                            //
+pub type Database = Arc<Mutex<HashMap<String, String>>>;
+
+//impl Database {
+pub fn new() -> Database {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+pub fn set(db: &Database, key: String, value: String, log_flag: bool) {
+    println!("store::set called with log_flag: {}", log_flag);
+    if log_flag {
+        replication::leader_write(logs::log_set(&key, &value).unwrap());
+    }
+        let mut map = db.lock().unwrap();
+        map.insert(key, value);
+}
+//option return type is how we get some and none if get works or not
+pub fn get(db: &Database, key: &str) -> Option<String> {
+    println!("store::get called");
+    let map = db.lock().unwrap();
+    map.get(key).cloned() 
+}
+pub fn delete(db: &Database, key: &str, log_flag: bool) -> bool {
+    println!("store::del called with log_flag: {}", log_flag);
+    if log_flag {
+        replication::leader_write(logs::log_del(&key));
+    }
+        let mut map = db.lock().unwrap();
+        map.remove(key).is_some()
+}
+//}
+/ actually storage operations??
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use crate::logs;
+
+/*pub struct Database {
+    db: Arc<Mutex<HashMap<String, String>>>,// isLoggable: bool,} */
+                                            //
+pub type Database = Arc<Mutex<HashMap<String, String>>>;
+
+//impl Database {
+pub fn new() -> Database {
+    Arc::new(Mutex::new(HashMap::new()))
+}
+
+pub fn set(db: &Database, key: String, value: String, log_flag: bool) {
+    println!("store::set called with log_flag: {}", log_flag);
+    if log_flag {
+        replication::leader_write(logs::log_set(&key, &value).unwrap());
+    }
+        let mut map = db.lock().unwrap();
+        map.insert(key, value);
+}
+//option return type is how we get some and none if get works or not
+pub fn get(db: &Database, key: &str) -> Option<String> {
+    println!("store::get called");
+    let map = db.lock().unwrap();
+    map.get(key).cloned() 
+}
+pub fn delete(db: &Database, key: &str, log_flag: bool) -> bool {
+    println!("store::del called with log_flag: {}", log_flag);
+    if log_flag {
+        replication::leader_write(logs::log_del(&key));
+    }
+        let mut map = db.lock().unwrap();
+        map.remove(key).is_some()
+}
+//}
 
 mod store;
 mod server;
@@ -8,13 +84,9 @@ mod raft;
 use raft::{NodeState, Role, RaftMsg, RequestVoteMsg, send_rpc, read_rpc, write_rpc, start_leader_election, handle_messages, send_heartbeats};
 use tokio::net::TcpListener;
 use tokio::time::{Duration, sleep};
-use tokio::io::{AsyncBufReadExt, BufReader, AsyncWriteExt};
-use clients::parse_command;
-
 
 #[tokio::main]
 async fn main() {
-    let db = store::new();
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
@@ -40,8 +112,6 @@ async fn main() {
 
     let listener = TcpListener::bind(&listener_addr).await.unwrap();
 
-    
-    let client_listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
     // start testing leader election,, fucking working on modulating too
     //if state.peers.len() <= 3 {
         /*
@@ -83,23 +153,20 @@ async fn main() {
                         write_rpc(&mut stream, response).await;
                     }
                 } 
-                client_result = client_listener.accept(), if state.role == Role::Leader => {
-                    let (stream, _) = client_result.unwrap();
-                    let mut reader = BufReader::new(stream);
-                    let mut line = String::new();
-
-                    if reader.read_line(&mut line).await.is_ok() {
-                        let response = parse_command(&mut state, line.trim(), &db).await;
-                        let mut stream = reader.into_inner();
-                        stream.write_all(response.as_bytes()).await.unwrap();
-                        stream.write_all(b"\n").await.unwrap();
-                    }
-                }
             }
             while state.commit_index > state.last_applied {
                 state.last_applied += 1;
                 let entry = &state.log[(state.last_applied - 1) as usize];
-                apply_entry(&db, entry);
+                reload(&db, entry);
+            }
+            if state.role == Role::Leader {
+                for i in state.log {
+                    // but how do i handle the "majority of match_index[i] >= i " case?
+                    if state.log[i].term == state.current_term && i > state.commit_index {
+                        state.commit_index = i;
+                        return;
+                    }
+                }
             }
         }
         
@@ -113,6 +180,4 @@ async fn main() {
     server::run(db); */
 
 }
-
-
 
