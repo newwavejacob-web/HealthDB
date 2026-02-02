@@ -23,7 +23,7 @@ use crate::logs;
         stream.write_all(b"\n").unwrap();
     }
 }*/
-pub async fn parse_command(state:&NodeState, command: &str, db: &Database) -> String {
+pub async fn parse_command(state: &mut NodeState, command: &str, db: &Database) -> String {
     
 //TODO update parsing to serialization in serde
     let parts: Vec<&str> = command.split_whitespace().collect();
@@ -51,7 +51,7 @@ pub async fn parse_command(state:&NodeState, command: &str, db: &Database) -> St
             state.log.push(entry.clone()); 
             persist_entry(&entry);
 
-            log_replication(&mut state).await;
+            log_replication(state).await;
 
 
             while state.commit_index > state.last_applied {
@@ -89,7 +89,7 @@ pub async fn parse_command(state:&NodeState, command: &str, db: &Database) -> St
             state.log.push(entry.clone()); 
             persist_entry(&entry);
 
-            log_replication(&mut state).await;
+            log_replication(state).await;
 
 
             while state.commit_index > state.last_applied {

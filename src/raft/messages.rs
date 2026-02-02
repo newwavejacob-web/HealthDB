@@ -183,11 +183,11 @@ pub fn apply_entry(db: &Database, entry: &LogEntry){
      let parts: Vec<&str> = data_str.split_whitespace().collect();
 
      if parts.len() < 3 { return; }
-     let key = parts[3];
 
      match parts[1].to_uppercase().as_str() {
         "SET" => {
             if parts.len() >= 4 {
+                let key = parts[2].to_string();
                 let value = parts[3..parts.len()-1].join(" ");
                 store::set(db, key, value, false);
             }

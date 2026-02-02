@@ -42,7 +42,7 @@ use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, send_rpc
     }
 // how do i implement concurrent handling 
     pub async fn log_replication(state: &mut NodeState) {
-        for peer in state.peers {
+        for peer in state.peers.clone() {
             let next_idx = *state.next_index.get(&peer).unwrap_or(&1);
             let prev_idx = next_idx - 1;
             let prev_term = if prev_idx > 0 {

@@ -44,7 +44,7 @@ use tokio::time::timeout;
     }
 
     
-    pub async fn send_heartbeats(state: &NodeState, peers: &[String]){
+    pub async fn send_heartbeats(state: &mut NodeState, peers: &[String]){
         // when i become a leader i have to send my Heartbeat
         // send empty append entries every like 200 ms.
         let heartbeat = RaftMsg::AppendEntries(AppendEntriesMsg {
@@ -66,7 +66,7 @@ use tokio::time::timeout;
                 let _ = send_rpc(&p, hb).await;
             });
             if state.role == Role::Leader {
-                log_replication(mut state);
+                log_replication(state);
             }
         }
     }

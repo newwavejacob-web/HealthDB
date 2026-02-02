@@ -27,7 +27,7 @@ pub async fn write_rpc(stream: &mut TcpStream, msg: RaftMsg) {
     let len = bytes.len() as u32;
 
     stream.write_all(&len.to_be_bytes()).await.unwrap();
-    stream.write_all(&bytes).await;
+    let _ = stream.write_all(&bytes).await;
 }
 pub async fn read_rpc(stream: &mut TcpStream) -> Result<RaftMsg, Box<dyn Error>> {
     let mut len_buf = [0u8; 4];
