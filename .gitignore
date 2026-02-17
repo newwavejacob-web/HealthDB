@@ -1,1 +1,9 @@
 /target
+Architecture.md
+Cargo.lock
+Cargo.toml
+Contributions.md
+DevLogs.md
+Getting_Starting.md
+HealthDB.md
+/src/resume.md
