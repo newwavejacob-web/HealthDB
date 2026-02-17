@@ -25,6 +25,7 @@ async fn main() {
     let my_port = 5000 + node_id; 
     let addr = format!("127.0.0.1:{}", my_port);
 
+    // these are just hard coded peers. which is ok for now but how do we get this working. 
     let peers: Vec<String> = (1..=3)
         .filter(|&id| id != node_id)
         .map(|id| format!("127.0.0.1:{}", 5000 + id))
@@ -41,21 +42,10 @@ async fn main() {
 
     
     let client_listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
-    // start testing leader election,, fucking working on modulating too
-    //if state.peers.len() <= 3 {
-        /*
-        //Heartbeat Test
-        if node_id == 1 {
-            state.role = Role::Leader; 
-            loop{
-                tokio::time::sleep(Duration::from_millis(150)).await;
-                match send_heartbeats(&state, peers) {
-                    Ok(_) => println!("Election Timer Reset");
-                    Err(e) => println!("Error: {}", e);
-                }
-            }
-        }
-        */
+
+    // TODO I HAVE TO WIRE UP WAL TO RAFT, THIS IS JUST RAFT STILL.
+        tokio::time::sleep(Duration::from_secs(20));
+
 
         let election_timeout = Duration::from_millis(150 + (node_id * 50));
         // but i have to send multipe heartbeats and send them concurrently to check when one goes
@@ -63,7 +53,7 @@ async fn main() {
                 state.last_applied += 1;
                 let entry = &state.log[(state.last_applied - 1) as usize];
                 apply_entry(&db, entry);
-            }
+        }
 
         loop {
             tokio::select! {
@@ -105,13 +95,13 @@ async fn main() {
         
 //    }
 
-    loop {
+    /*loop {
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
-   /* let db = store::new();
+    let db = store::new();
     logs::create_log(&db);
-    server::run(db); */
-
+    server::run(db); 
+*/
 }
 
 
