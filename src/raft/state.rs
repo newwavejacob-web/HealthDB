@@ -27,6 +27,7 @@ pub struct NodeState {
     pub match_index: HashMap<String, u64>,
     
     pub node_id: u64,
+    #[allow(dead_code)] // this node's own bind address; kept in state, not read yet
     pub address: String,
     pub peers: Vec<String>,
 }

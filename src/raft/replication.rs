@@ -82,14 +82,14 @@ use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, send_rpc
     }
     
     // this actually appends our nodestate log to file.
-    pub async fn persist_entry(/*state: NodeState,*/ log: &LogEntry) -> std::io::Result<()> {
-        //if state.role != Role::Leader { return; } 
+    // sync (blocking std::fs) on purpose: it's a small append and it's called from
+    // both async (leader, in clients.rs) and sync (follower, in messages.rs) paths.
+    pub fn persist_entry(node_id: u64, log: &LogEntry) -> std::io::Result<()> {
         let mut file = OpenOptions::new()
             .append(true)
             .create(true)
-            .open("log.txt")?;
-        
-        //state.log.push(log.clone());
+            .open(crate::logs::log_path(node_id))?;
+
         file.write_all(&log.data)?;
         println!("Appended to log");
         Ok(())

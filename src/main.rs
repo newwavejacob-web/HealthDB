@@ -4,7 +4,7 @@ mod clients;
 mod logs; 
 mod raft;
 
-use raft::{NodeState, Role, RaftMsg, RequestVoteMsg, send_rpc, read_rpc, write_rpc, start_leader_election, handle_messages, send_heartbeats, apply_entry};
+use raft::{NodeState, Role, read_rpc, write_rpc, start_leader_election, handle_messages, send_heartbeats, apply_entry};
 use tokio::net::TcpListener;
 use tokio::time::{Duration, sleep};
 use tokio::io::{AsyncBufReadExt, BufReader, AsyncWriteExt};
@@ -33,6 +33,9 @@ async fn main() {
 
     let mut state = NodeState::new(node_id, addr.clone(), peers);
 
+    // replay this node's WAL into the in-memory store on startup (crash recovery).
+    logs::create_log(&db, node_id);
+
     println!("Node {} on {}", node_id, addr);
     println!("Peers: {:?}", state.peers);
 
@@ -41,19 +44,14 @@ async fn main() {
     let listener = TcpListener::bind(&listener_addr).await.unwrap();
 
     
-    let client_listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
-
-    // TODO I HAVE TO WIRE UP WAL TO RAFT, THIS IS JUST RAFT STILL.
-        tokio::time::sleep(Duration::from_secs(20));
-
+    // each node needs its own client port so multiple nodes can run on one host.
+    // only the leader actually accepts client connections (see the select! arm below),
+    // but every node still has to bind a distinct port.
+    let client_port = 6379 + node_id;
+    let client_listener = TcpListener::bind(format!("127.0.0.1:{}", client_port)).await.unwrap();
+    println!("Client port: {}", client_port);
 
         let election_timeout = Duration::from_millis(150 + (node_id * 50));
-        // but i have to send multipe heartbeats and send them concurrently to check when one goes
-         while state.commit_index > state.last_applied {
-                state.last_applied += 1;
-                let entry = &state.log[(state.last_applied - 1) as usize];
-                apply_entry(&db, entry);
-        }
 
         loop {
             tokio::select! {
@@ -61,14 +59,12 @@ async fn main() {
                 _ = sleep(election_timeout) => {
                     println!("Election Timeout, Starting leader election");
                     state.role = Role::Candidate;
-                    let p_clone = state.peers.clone();
                     start_leader_election(&mut state).await;
                 }
                 // sends heartbeats if we have a leader every 125 ms, lowkey works really well with
                 // tokio select! macro 
                 _ = sleep(Duration::from_millis(125)), if state.role == Role::Leader => {
-                    let p_clone = state.peers.clone();
-                    send_heartbeats(&mut state, &p_clone).await;
+                    send_heartbeats(&mut state).await;
                 }
                 // this accounts for both normal rpc calls as well as heartbeats
                 result = listener.accept() => {
@@ -91,7 +87,16 @@ async fn main() {
                     }
                 }
             }
-                   }
+
+            // apply any newly-committed entries to the state machine. this runs after every
+            // event so followers (whose commit_index advances inside handle_append_entries)
+            // actually apply committed entries to their store, not just the leader.
+            while state.commit_index > state.last_applied {
+                state.last_applied += 1;
+                let entry = state.log[(state.last_applied - 1) as usize].clone();
+                apply_entry(&db, &entry);
+            }
+        }
         
 //    }
 

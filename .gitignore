@@ -1,4 +1,6 @@
 /target
+log-*.txt
+log.txt
 Architecture.md
 Cargo.lock
 Cargo.toml

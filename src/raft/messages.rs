@@ -1,6 +1,6 @@
 //RaftMsg, RequestVote, AppendEntries
 //always remember to modulate. it will help you think about the problem clearer
-use crate::raft::{NodeState, Role, send_rpc};
+use crate::raft::{NodeState, Role};
 use serde::{Serialize, Deserialize};
 use crate::raft::replication::persist_entry;
 use crate::store::{self, Database};
@@ -66,7 +66,10 @@ pub fn handle_request_vote(state: &mut NodeState, req: RequestVoteMsg) -> Reques
     let last_idx = state.log.len() as u64;
 
     let can_vote = state.voted_for.is_none() || state.voted_for == Some(req.candidate_id);
-    let up_to_date_check = req.last_log_term == last_term && req.last_log_idx >= last_idx;
+    // Raft §5.4.1: candidate's log is at least as up-to-date if its last term is higher,
+    // or the terms tie and its log is at least as long.
+    let up_to_date_check = req.last_log_term > last_term
+        || (req.last_log_term == last_term && req.last_log_idx >= last_idx);
 
     if can_vote && up_to_date_check {
         state.voted_for = Some(req.candidate_id);
@@ -131,7 +134,9 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
                 state.log.truncate(log_idx);
                 state.log.extend(req.entries[i..].iter().cloned());
                 for entry in &req.entries[i..] {
-                    persist_entry(entry);
+                    if let Err(e) = persist_entry(state.node_id, entry) {
+                        eprintln!("WAL persist failed: {}", e);
+                    }
                 }
                 break;
             }
@@ -139,7 +144,9 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
         else {
             state.log.extend(req.entries[i..].iter().cloned());
             for entry in &req.entries[i..] {
-                persist_entry(entry);
+                if let Err(e) = persist_entry(state.node_id, entry) {
+                    eprintln!("WAL persist failed: {}", e);
+                }
             }
             break;
         }
@@ -198,4 +205,46 @@ pub fn apply_entry(db: &Database, entry: &LogEntry){
         }
         _ => {}
      }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_append_entries_valid() {
+        let mut state = NodeState::new(1, "127.0.0.1:5001".into(), vec![]);
+        state.current_term = 1;
+
+        let req = AppendEntriesMsg {
+            term: 1,
+            leader_id: 2,
+            prev_log_idx: 0,
+            prev_log_term: 0,
+            entries: vec![LogEntry { term: 1, data: b"SET foo bar".to_vec() }],
+            leader_commit: 0,
+        };
+
+        let resp = handle_append_entries(&mut state, req);
+        assert!(resp.success);
+        assert_eq!(state.log.len(), 1);
+    }
+
+    #[test]
+    fn test_append_entries_rejects() {
+        let mut state = NodeState::new(1, "127.0.0.1:5001".into(), vec![]);
+        state.current_term = 5;
+
+        let req = AppendEntriesMsg {
+            term: 3,
+            leader_id: 2,
+            prev_log_idx: 0,
+            prev_log_term: 0,
+            entries: vec![],
+            leader_commit: 0,
+        };
+
+        let resp = handle_append_entries(&mut state, req);
+        assert!(!resp.success);
+    }
 }

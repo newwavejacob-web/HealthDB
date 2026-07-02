@@ -2,13 +2,20 @@ use crate::store::Database;
 use crate::store;
 use crate::raft::LogEntry;
 
-use std::fs::{OpenOptions, File};
-use std::io::{BufRead, BufReader, Write};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::error::Error;
 use crc32fast::Hasher;
 
-pub fn create_log(db: &Database) {
-    let file_result = File::open("log.txt");
+// each node keeps its own WAL file so multiple nodes can run in one directory
+// without stomping on each other's log.
+pub fn log_path(node_id: u64) -> String {
+    format!("log-{}.txt", node_id)
+}
+
+pub fn create_log(db: &Database, node_id: u64) {
+    let path = log_path(node_id);
+    let file_result = File::open(&path);
     // both arms of a match must return the same type
     match file_result {
         Ok(file) => {
@@ -18,8 +25,8 @@ pub fn create_log(db: &Database) {
             }
         }
         Err(_) => {
-            File::create("log.txt");
-            println!("created new Log file");
+            let _ = File::create(&path);
+            println!("created new Log file: {}", path);
         }
     }
 }
@@ -79,10 +86,8 @@ pub fn log_del(key: &str, term: u64) -> LogEntry  {
 // need to use a flag to know whether we append or reload, add handling
 // RELOAD WHENEVER LOGS DONT MATCH DATABASE? IM PRETTY SURE aka when its just new dont overthink it
 pub fn reload(log_file: &File, db: &Database) -> Result<(), Box<dyn Error>> {
-// let db = store::new(); // literally the error I JUST FUCKING GOT
 // only needs to be done in main right? since be are taking the new shit and jsjt adding to it.
-parse_log(&log_file, &db);
-Ok(())
+parse_log(&log_file, &db)
 }
 
 //TODO update parsing to serialization in serde

@@ -1,9 +1,7 @@
 // this is my client handling file 
 
-use std::io::{BufRead, BufReader, Write};
-use std::net::TcpStream;
 use crate::store::{self, Database};
-use crate::raft::{NodeState, Role, LogEntry, persist_entry, log_replication, apply_entry};
+use crate::raft::{NodeState, Role, persist_entry, log_replication, apply_entry};
 use crate::logs;
 
 
@@ -43,13 +41,15 @@ pub async fn parse_command(state: &mut NodeState, command: &str, db: &Database) 
 
             let key = parts[1].to_string();
             let value = parts[2..].join(" ");
-            let flag = true;
+            let _flag = true;
 
             let entry = logs::log_set(&key, &value, state.current_term);
             let entry_index = state.log.len() as u64 + 1;
 
-            state.log.push(entry.clone()); 
-            persist_entry(&entry);
+            state.log.push(entry.clone());
+            if let Err(e) = persist_entry(state.node_id, &entry) {
+                eprintln!("WAL persist failed: {}", e);
+            }
 
             log_replication(state).await;
 
@@ -86,8 +86,10 @@ pub async fn parse_command(state: &mut NodeState, command: &str, db: &Database) 
             let entry = logs::log_del(&key, state.current_term);
             let entry_index = state.log.len() as u64 + 1;
 
-            state.log.push(entry.clone()); 
-            persist_entry(&entry);
+            state.log.push(entry.clone());
+            if let Err(e) = persist_entry(state.node_id, &entry) {
+                eprintln!("WAL persist failed: {}", e);
+            }
 
             log_replication(state).await;
 

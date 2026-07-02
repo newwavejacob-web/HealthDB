@@ -1,8 +1,7 @@
 //vote handliong, elecition logic
-use crate::raft::{NodeState, Role, RequestVoteMsg, send_rpc, AppendEntriesMsg, RequestVoteResponse, AppendEntriesResponse, RaftMsg};
-use crate::raft::RaftMsg::{RequestVote, AppendEntries};
+use crate::raft::{NodeState, Role, RequestVoteMsg, send_rpc, RaftMsg};
+use crate::raft::RaftMsg::RequestVote;
 use crate::raft::replication::log_replication;
-use tokio::time::timeout;
 
 
     pub async fn start_leader_election(state: &mut NodeState) {
@@ -44,30 +43,14 @@ use tokio::time::timeout;
     }
 
     
-    pub async fn send_heartbeats(state: &mut NodeState, peers: &[String]){
-        // when i become a leader i have to send my Heartbeat
-        // send empty append entries every like 200 ms.
-        let heartbeat = RaftMsg::AppendEntries(AppendEntriesMsg {
-            term: 0,
-            leader_id: 0,
-            prev_log_idx: 0,
-            prev_log_term: 0,
-            entries: Vec::new(), 
-            leader_commit: 0,
-        });
-        // and i have to keep sending the heartbeat, or i could just do that in my main timer loop.
-        // logic is kinda funky since i am directly using the select! loop to send heartbeats but
-        // to be honest it checks out. it works out really cleanly with my code cause select lets
-        // it so that if no special rpcs get sent but theres a leader we send a heartbeat to all.
-        for peer in peers {
-            let hb = heartbeat.clone();
-            let p = peer.clone(); 
-            tokio::spawn(async move {
-                let _ = send_rpc(&p, hb).await;
-            });
-            if state.role == Role::Leader {
-                log_replication(state);
-            }
+    pub async fn send_heartbeats(state: &mut NodeState){
+        // A heartbeat is just an AppendEntries RPC. log_replication already builds the correct
+        // per-peer AppendEntries with the real term, leader_id, prev_log info, and any entries
+        // the follower is missing. When a follower is fully caught up the entries vec is empty,
+        // which is exactly a heartbeat. This keeps followers from timing out AND replicates,
+        // instead of the old all-zero message that followers rejected outright.
+        if state.role == Role::Leader {
+            log_replication(state).await;
         }
     }
 

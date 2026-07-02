@@ -1,7 +1,6 @@
 // actually storage operations??
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use crate::logs;
 
 /*pub struct Database {
     db: Arc<Mutex<HashMap<String, String>>>,// isLoggable: bool,} */
@@ -13,7 +12,7 @@ pub fn new() -> Database {
     Arc::new(Mutex::new(HashMap::new()))
 }
 
-pub fn set(db: &Database, key: String, value: String, log_flag: bool) {
+pub fn set(db: &Database, key: String, value: String, _log_flag: bool) {
 /*    println!("store::set called with log_flag: {}", log_flag);
     if log_flag {
         replication::persist_entry(logs::log_set(&key, &value).unwrap());
@@ -27,7 +26,7 @@ pub fn get(db: &Database, key: &str) -> Option<String> {
     let map = db.lock().unwrap();
     map.get(key).cloned() 
 }
-pub fn delete(db: &Database, key: &str, log_flag: bool) -> bool {
+pub fn delete(db: &Database, key: &str, _log_flag: bool) -> bool {
    /* println!("store::del called with log_flag: {}", log_flag);
     if log_flag {
         replication::persist_entry(logs::log_del(&key));
