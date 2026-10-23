@@ -6,7 +6,8 @@
      */
 use std::fs::OpenOptions;
 use std::io::Write;
-use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, send_rpc};
+use std::collections::HashMap;
+use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, broadcast};
 
     // here im gonna actually write the fault tolerant logs to Database
     pub fn write_to_logs(state: &mut NodeState, peer: String, matched_to: u64){
@@ -42,6 +43,10 @@ use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, send_rpc
     }
 // how do i implement concurrent handling 
     pub async fn log_replication(state: &mut NodeState) {
+        let mut requests = Vec::new();
+        // how far each peer's log will match ours if it accepts this message
+        let mut sent_up_to = HashMap::new();
+
         for peer in state.peers.clone() {
             let next_idx = *state.next_index.get(&peer).unwrap_or(&1);
             let prev_idx = next_idx - 1;
@@ -56,6 +61,7 @@ use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, send_rpc
                 .skip((next_idx - 1) as usize)
                 .cloned()
                 .collect();
+            sent_up_to.insert(peer.clone(), prev_idx + entries.len() as u64);
 
             let msg = RaftMsg::AppendEntries(AppendEntriesMsg {
                 term: state.current_term,
@@ -65,13 +71,23 @@ use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, send_rpc
                 entries, 
                 leader_commit: state.commit_index,
             });
+            requests.push((peer, msg));
+        }
 
-            match send_rpc(&peer, msg).await {
+        for (peer, result) in broadcast(requests).await {
+            match result {
                 Ok(RaftMsg::AppendEntriesResponse(response)) => {
-                    if response.success {
-                        write_to_logs(state, peer.clone(), state.log.len() as u64);
+                    if response.current_term > state.current_term {
+                        // a newer leader exists, stop acting as leader
+                        state.current_term = response.current_term;
+                        state.role = Role::Follower;
+                        state.voted_for = None;
+                        return;
                     }
-                    if !response.success {
+                    if response.success {
+                        write_to_logs(state, peer.clone(), sent_up_to[&peer]);
+                    }
+                    else {
                         state.next_index.insert(peer.clone(), response.next_index);
                     }
                 }

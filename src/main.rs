@@ -4,7 +4,7 @@ mod clients;
 mod logs; 
 mod raft;
 
-use raft::{NodeState, Role, read_rpc, write_rpc, start_leader_election, handle_messages, send_heartbeats, apply_entry};
+use raft::{NodeState, Role, read_rpc_with_timeout, write_rpc, start_leader_election, handle_messages, send_heartbeats, apply_entry};
 use tokio::net::TcpListener;
 use tokio::time::{Duration, sleep};
 use tokio::io::{AsyncBufReadExt, BufReader, AsyncWriteExt};
@@ -75,9 +75,11 @@ async fn main() {
                 // this accounts for both normal rpc calls as well as heartbeats
                 result = listener.accept() => {
                     let (mut stream, _ ) = result.unwrap();
-                    if let Ok(msg) = read_rpc(&mut stream).await {
+                    if let Ok(msg) = read_rpc_with_timeout(&mut stream).await {
                         let response = handle_messages(&mut state, msg);
-                        write_rpc(&mut stream, response).await;
+                        if let Err(e) = write_rpc(&mut stream, response).await {
+                            eprintln!("Error replying to rpc: {}", e);
+                        }
                     }
                 } 
                 client_result = client_listener.accept(), if state.role == Role::Leader => {

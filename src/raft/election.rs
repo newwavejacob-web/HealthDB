@@ -1,5 +1,5 @@
 //vote handliong, elecition logic
-use crate::raft::{NodeState, Role, RequestVoteMsg, send_rpc, RaftMsg};
+use crate::raft::{NodeState, Role, RequestVoteMsg, broadcast, RaftMsg};
 use crate::raft::RaftMsg::RequestVote;
 use crate::raft::replication::{log_replication, persist_entry};
 use crate::logs;
@@ -12,17 +12,16 @@ use crate::logs;
         let mut votes = 1;
         let majority = (state.peers.len() + 1) / 2 + 1;
 
-        for peer in state.peers.clone() {
-            let request = RequestVote(RequestVoteMsg {
-                term: state.current_term,
-                candidate_id: state.node_id,
-                last_log_idx: state.log.len() as u64,
-                last_log_term: state.log.last().map(|e| e.term).unwrap_or(0),
-            });
+        let request = RequestVote(RequestVoteMsg {
+            term: state.current_term,
+            candidate_id: state.node_id,
+            last_log_idx: state.log.len() as u64,
+            last_log_term: state.log.last().map(|e| e.term).unwrap_or(0),
+        });
+        let requests = state.peers.iter().map(|peer| (peer.clone(), request.clone())).collect();
 
-            let req = request.clone();
-
-            match send_rpc(&peer, req).await {
+        for (_peer, result) in broadcast(requests).await {
+            match result {
                 Ok(RaftMsg::RequestVoteResponse(response)) => {
                     if response.current_term > state.current_term {
                         // someone is ahead of us, so this election is over
