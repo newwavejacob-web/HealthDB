@@ -17,16 +17,22 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        println!("Usage: cargo run <node id>");
+        println!("Usage: cargo run -- <node id> [--nodes <cluster size>]");
         return;
     }
 
     let node_id: u64 = args[1].parse().unwrap();
+    // cluster size comes from --nodes (default 5). node ids run 1..=N and each node's
+    // raft port is 5000 + id, so every node can work out its peers from N alone.
+    let cluster_size: u64 = flag_value(&args, "--nodes").map(|n| n.parse().unwrap()).unwrap_or(5);
+    if node_id < 1 || node_id > cluster_size {
+        println!("node id must be between 1 and {}", cluster_size);
+        return;
+    }
     let my_port = 5000 + node_id; 
     let addr = format!("127.0.0.1:{}", my_port);
 
-    // these are just hard coded peers. which is ok for now but how do we get this working. 
-    let peers: Vec<String> = (1..=3)
+    let peers: Vec<String> = (1..=cluster_size)
         .filter(|&id| id != node_id)
         .map(|id| format!("127.0.0.1:{}", 5000 + id))
         .collect();
@@ -109,5 +115,7 @@ async fn main() {
 */
 }
 
-
-
+// returns the value after a flag, e.g. flag_value(args, "--nodes") for `--nodes 5`
+fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
+    args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).map(|s| s.as_str())
+}

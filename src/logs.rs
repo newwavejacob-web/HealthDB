@@ -83,6 +83,19 @@ pub fn log_del(key: &str, term: u64) -> LogEntry  {
     }
 }
 
+// written by a new leader at the start of its term. applying it does nothing.
+pub fn log_noop(term: u64) -> LogEntry {
+    let mut hasher = Hasher::new();
+    let file_write = "NOOP\n";
+    hasher.update(file_write.as_bytes());
+    let checksum = hasher.finalize();
+
+    LogEntry {
+        data: format!("{} NOOP {}\n", file_write.len(), checksum).as_bytes().to_vec(),
+        term,
+    }
+}
+
 // need to use a flag to know whether we append or reload, add handling
 // RELOAD WHENEVER LOGS DONT MATCH DATABASE? IM PRETTY SURE aka when its just new dont overthink it
 pub fn reload(log_file: &File, db: &Database) -> Result<(), Box<dyn Error>> {

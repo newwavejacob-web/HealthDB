@@ -1,7 +1,8 @@
 //vote handliong, elecition logic
 use crate::raft::{NodeState, Role, RequestVoteMsg, send_rpc, RaftMsg};
 use crate::raft::RaftMsg::RequestVote;
-use crate::raft::replication::log_replication;
+use crate::raft::replication::{log_replication, persist_entry};
+use crate::logs;
 
 
     pub async fn start_leader_election(state: &mut NodeState) {
@@ -24,21 +25,42 @@ use crate::raft::replication::log_replication;
             match send_rpc(&peer, req).await {
                 Ok(RaftMsg::RequestVoteResponse(response)) => {
                     if response.current_term > state.current_term {
+                        // someone is ahead of us, so this election is over
                         state.role = Role::Follower;
                         state.current_term = response.current_term;
+                        state.voted_for = None;
+                        return;
                     }
                     if response.voted && response.current_term == state.current_term {
                         votes += 1;
-                        if votes >= majority {
+                        if votes >= majority && state.role != Role::Leader {
                             state.role = Role::Leader;
+                            println!("Node {} became leader for term {}", state.node_id, state.current_term);
                         }
                     }
-                    state.next_index.insert(peer.clone(), state.log.len() as u64 + 1);
-                    state.match_index.insert(peer.clone(), 0);
                 }
                 Err(e) => eprintln!("Error: {}", e),
                 _ => {}
             }
+        }
+
+        if state.role == Role::Leader {
+            become_leader(state);
+        }
+    }
+
+    // reset per-peer replication state and append a no-op for the new term. a leader can only
+    // commit entries from its own term (Raft §5.4.2), so without the no-op, entries the old
+    // leader committed stay invisible on this node until a client happens to write (Raft §8).
+    fn become_leader(state: &mut NodeState) {
+        for peer in state.peers.clone() {
+            state.next_index.insert(peer.clone(), state.log.len() as u64 + 1);
+            state.match_index.insert(peer, 0);
+        }
+        let noop = logs::log_noop(state.current_term);
+        state.log.push(noop.clone());
+        if let Err(e) = persist_entry(state.node_id, &noop) {
+            eprintln!("WAL persist failed: {}", e);
         }
     }
 

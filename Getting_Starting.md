@@ -46,23 +46,32 @@ cargo build --release
 
 This compiles the project and places the binary in `target/release/`.
 
-### 3. Start a 3-Node Cluster
+### 3. Start a Cluster
 
-Open three terminal windows:
+The quickest way is the script, which starts 5 nodes (pass a different count as the first argument) and writes each node's output to `cluster-logs/node-<id>.out`:
+
+```bash
+scripts/cluster.sh        # 5 nodes
+scripts/cluster.sh 3      # 3 nodes
+```
+
+`scripts/failover-demo.sh` starts 5 nodes, writes a key, kills the leader, and checks that a new leader still serves the key and accepts writes.
+
+To run nodes by hand, open one terminal per node. `--nodes` sets the cluster size (default 5); every node must be given the same value:
 
 **Terminal 1 - Node 1:**
 ```bash
-cargo run --release -- 1
+cargo run --release -- 1 --nodes 3
 ```
 
 **Terminal 2 - Node 2:**
 ```bash
-cargo run --release -- 2
+cargo run --release -- 2 --nodes 3
 ```
 
 **Terminal 3 - Node 3:**
 ```bash
-cargo run --release -- 3
+cargo run --release -- 3 --nodes 3
 ```
 
 You should see output like:
@@ -151,20 +160,23 @@ healthdb/
 Nodes are configured via command-line arguments:
 
 ```bash
-cargo run -- <node_id>
+cargo run -- <node_id> [--nodes <cluster size>]
 ```
 
 The node ID determines:
 - **RPC Port:** `5000 + node_id`
-- **Peer List:** All other nodes (assumes 3-node cluster)
+- **Client Port:** `6379 + node_id`
+- **Peer List:** All other nodes `1..=N`, where N is `--nodes` (default 5)
 
 ### Default Ports
 
 | Node ID | RPC Port | Client Port |
 |---------|----------|-------------|
-| 1 | 5001 | 6379 |
-| 2 | 5002 | 6379 |
-| 3 | 5003 | 6379 |
+| 1 | 5001 | 6380 |
+| 2 | 5002 | 6381 |
+| 3 | 5003 | 6382 |
+| 4 | 5004 | 6383 |
+| 5 | 5005 | 6384 |
 
 ### Timeouts
 
