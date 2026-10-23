@@ -2,8 +2,10 @@
 // NOdeState, Role
 use crate::raft::messages::LogEntry;
 use crate::raft::persist::{self, Meta, Snapshot};
+use crate::tls::Tls;
 use std::collections::HashMap;
 use std::io;
+use std::sync::Arc;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +42,9 @@ pub struct NodeState {
     pub address: String,
     pub peers: Vec<String>,
 
+    // set with --tls; used for every outgoing rpc
+    pub tls: Option<Arc<Tls>>,
+
     // set when a valid leader contacts us or we grant a vote; main resets the election timer
     pub heard_from_leader: bool,
 
@@ -65,6 +70,7 @@ impl NodeState {
             node_id,
             address,
             peers,
+            tls: None,
             heard_from_leader: false,
             data_dir,
             persisted: Meta::default(),

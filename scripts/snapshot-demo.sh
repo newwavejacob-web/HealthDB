@@ -7,9 +7,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# TLS=1 runs the same checks with --tls: mutual TLS between nodes, TLS on the client port
+TLS_ARGS=()
+if [[ "${TLS:-0}" == 1 ]]; then
+    TLS_ARGS=(--tls certs)
+fi
+
 NODES=3
 KEYS=20
 cargo build --quiet
+if [[ "${TLS:-0}" == 1 && ! -f certs/ca.pem ]]; then scripts/gen-certs.sh 5 certs; fi
 rm -rf cluster-logs && mkdir -p cluster-logs
 rm -f log-*.txt meta-*.txt snapshot-*.bin
 
@@ -18,10 +25,17 @@ cleanup() { for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done; wait 
 trap cleanup EXIT
 
 start_node() {
-    ./target/debug/master "$1" --nodes "$NODES" --snapshot-every 5 >> "cluster-logs/node-$1.out" 2>&1 &
+    ./target/debug/master "$1" --nodes "$NODES" --snapshot-every 5 ${TLS_ARGS[@]+"${TLS_ARGS[@]}"} >> "cluster-logs/node-$1.out" 2>&1 &
     pids[$(($1 - 1))]=$!
 }
-send() { printf '%s\n' "$2" | nc -w 2 127.0.0.1 $((6379 + $1)); }
+send() {
+    if [[ "${TLS:-0}" == 1 ]]; then
+        printf '%s\n' "$2" | openssl s_client -quiet -verify_return_error -CAfile certs/ca.pem \
+            -connect 127.0.0.1:$((6379 + $1)) 2>/dev/null
+    else
+        printf '%s\n' "$2" | nc -w 2 127.0.0.1 $((6379 + $1))
+    fi
+}
 
 # highest-term leader among the given nodes, looking only at output after the last marker
 find_leader() {

@@ -62,6 +62,17 @@ scripts/cluster.sh 3      # 3 nodes
 Other flags:
 - `--data-dir <dir>`: where `log-<id>.txt` (WAL), `meta-<id>.txt` (term/vote/commit) and `snapshot-<id>.bin` live (default `.`)
 - `--snapshot-every <n>`: compact the log once `n` applied entries have built up past the last snapshot (default 1000)
+- `--tls <dir>`: turn on TLS. Node-to-node RPCs use mutual TLS (both sides must present a cert signed by the cluster CA), and the client port uses server-side TLS. Generate certs with `scripts/gen-certs.sh [nodes] [dir]`, which writes `certs/` by default
+
+### Running with TLS
+
+```bash
+scripts/gen-certs.sh 5            # CA + node-1..5 certs in certs/
+cargo run -- 1 --tls certs        # repeat for nodes 2-5
+echo "SET foo bar" | openssl s_client -quiet -verify_return_error -CAfile certs/ca.pem -connect 127.0.0.1:6380
+```
+
+Both demo scripts accept `TLS=1` to run the same checks with TLS on, e.g. `TLS=1 scripts/failover-demo.sh`.
 
 To run nodes by hand, open one terminal per node. `--nodes` sets the cluster size (default 5); every node must be given the same value:
 

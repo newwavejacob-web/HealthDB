@@ -13,3 +13,4 @@ cluster-logs/
 meta-*.txt
 *.tmp
 snapshot-*.bin
+certs/

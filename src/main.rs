@@ -3,14 +3,17 @@ mod server;
 mod clients;
 mod logs; 
 mod raft;
+mod tls;
 
-use raft::{NodeState, Role, read_rpc_with_timeout, write_rpc, start_leader_election, handle_messages, send_heartbeats, apply_committed};
+use raft::{NodeState, Role, RPC_TIMEOUT, read_rpc_with_timeout, write_rpc, start_leader_election, handle_messages, send_heartbeats, apply_committed};
+use store::Database;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::time::{Duration, Instant, interval, sleep_until, timeout};
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
-use tokio::io::{AsyncBufReadExt, BufReader, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, BufReader, AsyncWriteExt};
 use clients::parse_command;
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(125);
@@ -28,7 +31,7 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        println!("Usage: cargo run -- <node id> [--nodes <cluster size>] [--data-dir <dir>] [--snapshot-every <entries>]");
+        println!("Usage: cargo run -- <node id> [--nodes <cluster size>] [--data-dir <dir>] [--snapshot-every <entries>] [--tls <cert dir>]");
         return;
     }
 
@@ -60,6 +63,12 @@ async fn main() {
     apply_committed(&mut state, &db);
     println!("Recovered term {}, snapshot through {}, {} log entries after it, {} committed",
         state.current_term, state.snapshot_index, state.log.len(), state.commit_index);
+
+    if let Some(dir) = flag_value(&args, "--tls") {
+        state.tls = Some(Arc::new(tls::Tls::load(dir.as_ref(), node_id).expect("failed to load TLS certs")));
+        println!("TLS on: mutual TLS between nodes, server TLS on the client port");
+    }
+    let tls = state.tls.clone();
 
     println!("Node {} on {}", node_id, addr);
     println!("Peers: {:?}", state.peers);
@@ -97,27 +106,25 @@ async fn main() {
                 }
                 // this accounts for both normal rpc calls as well as heartbeats
                 result = listener.accept() => {
-                    let (mut stream, _ ) = result.unwrap();
-                    if let Ok(msg) = read_rpc_with_timeout(&mut stream).await {
-                        let response = handle_messages(&mut state, msg, &db);
-                        if let Err(e) = write_rpc(&mut stream, response).await {
-                            eprintln!("Error replying to rpc: {}", e);
-                        }
+                    let (stream, _ ) = result.unwrap();
+                    match &tls {
+                        // the handshake rejects any peer without a cert signed by the cluster CA
+                        Some(tls) => match timeout(RPC_TIMEOUT, tls.peer_acceptor.accept(stream)).await {
+                            Ok(Ok(mut stream)) => serve_rpc(&mut state, &mut stream, &db).await,
+                            Ok(Err(e)) => eprintln!("Rejected rpc connection: TLS handshake failed: {}", e),
+                            Err(_) => eprintln!("Rejected rpc connection: TLS handshake timed out"),
+                        },
+                        None => serve_rpc(&mut state, &mut { stream }, &db).await,
                     }
                 } 
                 client_result = client_listener.accept(), if state.role == Role::Leader => {
                     let (stream, _) = client_result.unwrap();
-                    let mut reader = BufReader::new(stream);
-                    let mut line = String::new();
-
-                    // a client that connects and never sends a line would otherwise freeze the node
-                    if let Ok(Ok(_)) = timeout(CLIENT_READ_TIMEOUT, reader.read_line(&mut line)).await {
-                        let response = parse_command(&mut state, line.trim(), &db).await;
-                        let mut stream = reader.into_inner();
-                        let reply = format!("{}\n", response);
-                        if let Err(e) = stream.write_all(reply.as_bytes()).await {
-                            eprintln!("Error replying to client: {}", e);
-                        }
+                    match &tls {
+                        Some(tls) => match timeout(CLIENT_READ_TIMEOUT, tls.client_acceptor.accept(stream)).await {
+                            Ok(Ok(stream)) => serve_client(&mut state, stream, &db).await,
+                            _ => eprintln!("Client TLS handshake failed"),
+                        },
+                        None => serve_client(&mut state, stream, &db).await,
                     }
                 }
             }
@@ -140,6 +147,33 @@ async fn main() {
     logs::create_log(&db);
     server::run(db); 
 */
+}
+
+async fn serve_rpc<S: AsyncRead + AsyncWrite + Unpin>(state: &mut NodeState, stream: &mut S, db: &Database) {
+    if let Ok(msg) = read_rpc_with_timeout(stream).await {
+        let response = handle_messages(state, msg, db);
+        if let Err(e) = write_rpc(stream, response).await {
+            eprintln!("Error replying to rpc: {}", e);
+        }
+    }
+}
+
+// one command per connection: read a line, run it, write the reply
+async fn serve_client<S: AsyncRead + AsyncWrite + Unpin>(state: &mut NodeState, stream: S, db: &Database) {
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+
+    // a client that connects and never sends a line would otherwise freeze the node
+    if let Ok(Ok(_)) = timeout(CLIENT_READ_TIMEOUT, reader.read_line(&mut line)).await {
+        let response = parse_command(state, line.trim(), db).await;
+        let mut stream = reader.into_inner();
+        let reply = format!("{}\n", response);
+        if let Err(e) = stream.write_all(reply.as_bytes()).await {
+            eprintln!("Error replying to client: {}", e);
+        }
+        // flushes, and for TLS sends close_notify so the client sees a clean end of stream
+        let _ = stream.shutdown().await;
+    }
 }
 
 // returns the value after a flag, e.g. flag_value(args, "--nodes") for `--nodes 5`

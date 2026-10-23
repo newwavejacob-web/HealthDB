@@ -6,8 +6,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# TLS=1 runs the same checks with --tls: mutual TLS between nodes, TLS on the client port
+TLS_ARGS=()
+if [[ "${TLS:-0}" == 1 ]]; then
+    TLS_ARGS=(--tls certs)
+fi
+
 NODES=5
 cargo build --quiet
+if [[ "${TLS:-0}" == 1 && ! -f certs/ca.pem ]]; then scripts/gen-certs.sh 5 certs; fi
 rm -rf cluster-logs && mkdir -p cluster-logs
 rm -f log-*.txt meta-*.txt snapshot-*.bin
 
@@ -16,7 +23,7 @@ cleanup() { for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done; wait 
 trap cleanup EXIT
 
 for i in $(seq 1 "$NODES"); do
-    ./target/debug/master "$i" --nodes "$NODES" > "cluster-logs/node-$i.out" 2>&1 &
+    ./target/debug/master "$i" --nodes "$NODES" ${TLS_ARGS[@]+"${TLS_ARGS[@]}"} > "cluster-logs/node-$i.out" 2>&1 &
     pids+=($!)
 done
 
@@ -32,7 +39,14 @@ find_leader() {
     echo "$best_node"
 }
 
-send() { printf '%s\n' "$2" | nc -w 2 127.0.0.1 $((6379 + $1)); }
+send() {
+    if [[ "${TLS:-0}" == 1 ]]; then
+        printf '%s\n' "$2" | openssl s_client -quiet -verify_return_error -CAfile certs/ca.pem \
+            -connect 127.0.0.1:$((6379 + $1)) 2>/dev/null
+    else
+        printf '%s\n' "$2" | nc -w 2 127.0.0.1 $((6379 + $1))
+    fi
+}
 
 sleep 2
 leader=$(find_leader)
@@ -60,7 +74,7 @@ echo "SET patient 43 -> $reply (4 of 5 nodes up)"
 [[ "$reply" == "OK" ]] || { echo "FAIL: write after failover"; exit 1; }
 
 start_node() {
-    ./target/debug/master "$1" --nodes "$NODES" >> "cluster-logs/node-$1.out" 2>&1 &
+    ./target/debug/master "$1" --nodes "$NODES" ${TLS_ARGS[@]+"${TLS_ARGS[@]}"} >> "cluster-logs/node-$1.out" 2>&1 &
     pids[$(($1 - 1))]=$!
 }
 

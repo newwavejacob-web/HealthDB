@@ -4,11 +4,13 @@
 //I HAVE TO SEND EVERYTHING TO EVERYTHING, WE NEED MORE CONCURRENCY NOT JUST COMMUNCATION
 
 use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, sleep, timeout};
 use crate::raft::messages::RaftMsg;
+use crate::tls::{Tls, server_name};
 use std::error::Error;
+use std::sync::Arc;
 
 pub type RpcError = Box<dyn Error + Send + Sync>;
 
@@ -18,12 +20,13 @@ pub const RPC_TIMEOUT: Duration = Duration::from_millis(30);
 pub const RPC_ATTEMPTS: u32 = 3;
 const RETRY_BACKOFF: Duration = Duration::from_millis(5);
 
-// one request/response, each attempt bounded by RPC_TIMEOUT, retried with exponential backoff
-pub async fn send_rpc(addr: &str, msg: RaftMsg) -> Result<RaftMsg, RpcError> {
+// one request/response, each attempt bounded by RPC_TIMEOUT, retried with exponential backoff.
+// with tls, every attempt is a mutually-authenticated TLS connection.
+pub async fn send_rpc(addr: &str, msg: RaftMsg, tls: Option<&Tls>) -> Result<RaftMsg, RpcError> {
     let mut backoff = RETRY_BACKOFF;
     let mut attempt = 1;
     loop {
-        let err: RpcError = match timeout(RPC_TIMEOUT, send_rpc_once(addr, &msg)).await {
+        let err: RpcError = match timeout(RPC_TIMEOUT, send_rpc_once(addr, &msg, tls)).await {
             Ok(Ok(response)) => return Ok(response),
             Ok(Err(e)) => e,
             Err(_) => format!("rpc to {} timed out after {:?}", addr, RPC_TIMEOUT).into(),
@@ -37,25 +40,33 @@ pub async fn send_rpc(addr: &str, msg: RaftMsg) -> Result<RaftMsg, RpcError> {
     }
 }
 
-async fn send_rpc_once(addr: &str, msg: &RaftMsg) -> Result<RaftMsg, RpcError> {
-    let mut stream = TcpStream::connect(addr).await?;
+async fn send_rpc_once(addr: &str, msg: &RaftMsg, tls: Option<&Tls>) -> Result<RaftMsg, RpcError> {
+    let stream = TcpStream::connect(addr).await?;
+    match tls {
+        Some(tls) => {
+            let mut stream = tls.connector.connect(server_name(addr)?, stream).await?;
+            exchange(&mut stream, msg).await
+        }
+        None => {
+            let mut stream = stream;
+            exchange(&mut stream, msg).await
+        }
+    }
+}
 
-    let bytes = bincode::serialize(msg)?;
-
-    let len = bytes.len() as u32;
-    stream.write_all(&len.to_be_bytes()).await?;
-    stream.write_all(&bytes).await?;
-
-    read_rpc(&mut stream).await 
+async fn exchange<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S, msg: &RaftMsg) -> Result<RaftMsg, RpcError> {
+    write_rpc(stream, msg.clone()).await?;
+    read_rpc(stream).await
 }
 
 // sends every (peer, msg) at once and returns the results once they've all finished or
 // given up, so the slowest peer bounds a round instead of the sum of all of them.
-pub async fn broadcast(requests: Vec<(String, RaftMsg)>) -> Vec<(String, Result<RaftMsg, RpcError>)> {
+pub async fn broadcast(requests: Vec<(String, RaftMsg)>, tls: Option<Arc<Tls>>) -> Vec<(String, Result<RaftMsg, RpcError>)> {
     let mut set = JoinSet::new();
     for (peer, msg) in requests {
+        let tls = tls.clone();
         set.spawn(async move {
-            let result = send_rpc(&peer, msg).await;
+            let result = send_rpc(&peer, msg, tls.as_deref()).await;
             (peer, result)
         });
     }
@@ -69,21 +80,23 @@ pub async fn broadcast(requests: Vec<(String, RaftMsg)>) -> Vec<(String, Result<
 }
 
 // the sender may have already timed out and hung up, so a failed write is not fatal
-pub async fn write_rpc(stream: &mut TcpStream, msg: RaftMsg) -> Result<(), RpcError> {
+pub async fn write_rpc<S: AsyncWrite + Unpin>(stream: &mut S, msg: RaftMsg) -> Result<(), RpcError> {
     let bytes = bincode::serialize(&msg)?;
     let len = bytes.len() as u32;
 
     stream.write_all(&len.to_be_bytes()).await?;
     stream.write_all(&bytes).await?;
+    // a TLS stream buffers, so push the frame out before waiting on the reply
+    stream.flush().await?;
     Ok(())
 }
 
 // incoming side gets the same deadline so a peer that connects and stalls can't block the node
-pub async fn read_rpc_with_timeout(stream: &mut TcpStream) -> Result<RaftMsg, RpcError> {
+pub async fn read_rpc_with_timeout<S: AsyncRead + Unpin>(stream: &mut S) -> Result<RaftMsg, RpcError> {
     timeout(RPC_TIMEOUT, read_rpc(stream)).await.map_err(|_| -> RpcError { "timed out reading rpc".into() })?
 }
 
-pub async fn read_rpc(stream: &mut TcpStream) -> Result<RaftMsg, RpcError> {
+pub async fn read_rpc<S: AsyncRead + Unpin>(stream: &mut S) -> Result<RaftMsg, RpcError> {
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
@@ -150,7 +163,7 @@ mod tests {
         });
 
         let start = Instant::now();
-        let result = send_rpc(&addr, vote_reply()).await;
+        let result = send_rpc(&addr, vote_reply(), None).await;
         let elapsed = start.elapsed();
 
         assert!(result.is_err());
@@ -171,7 +184,7 @@ mod tests {
             write_rpc(&mut stream, vote_reply()).await.unwrap();
         });
 
-        match send_rpc(&addr, vote_reply()).await {
+        match send_rpc(&addr, vote_reply(), None).await {
             Ok(RaftMsg::RequestVoteResponse(r)) => assert_eq!(r.current_term, 7),
             other => panic!("expected a vote response, got {:?}", other.map_err(|e| e.to_string())),
         }

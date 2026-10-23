@@ -22,7 +22,7 @@ use crate::logs;
         });
         let requests = state.peers.iter().map(|peer| (peer.clone(), request.clone())).collect();
 
-        for (_peer, result) in broadcast(requests).await {
+        for (_peer, result) in broadcast(requests, state.tls.clone()).await {
             match result {
                 Ok(RaftMsg::RequestVoteResponse(response)) => {
                     if response.current_term > state.current_term {

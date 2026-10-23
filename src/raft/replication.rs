@@ -81,7 +81,7 @@ use crate::store::Database;
             requests.push((peer, msg));
         }
 
-        for (peer, result) in broadcast(requests).await {
+        for (peer, result) in broadcast(requests, state.tls.clone()).await {
             let (term, success, next_index) = match result {
                 Ok(RaftMsg::AppendEntriesResponse(r)) => (r.current_term, r.success, r.next_index),
                 Ok(RaftMsg::InstallSnapshotResponse(r)) => (r.current_term, true, 0),
