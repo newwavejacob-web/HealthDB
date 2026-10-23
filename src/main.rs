@@ -28,7 +28,7 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        println!("Usage: cargo run -- <node id> [--nodes <cluster size>] [--data-dir <dir>]");
+        println!("Usage: cargo run -- <node id> [--nodes <cluster size>] [--data-dir <dir>] [--snapshot-every <entries>]");
         return;
     }
 
@@ -52,9 +52,14 @@ async fn main() {
     // committed part of the log into the in-memory store.
     let data_dir = PathBuf::from(flag_value(&args, "--data-dir").unwrap_or("."));
     std::fs::create_dir_all(&data_dir).unwrap();
-    let mut state = NodeState::load(node_id, addr.clone(), peers, data_dir).expect("failed to load raft state");
+    let (mut state, snapshot_data) = NodeState::load(node_id, addr.clone(), peers, data_dir).expect("failed to load raft state");
+    if let Some(n) = flag_value(&args, "--snapshot-every") {
+        state.snapshot_threshold = n.parse().unwrap();
+    }
+    *db.lock().unwrap() = snapshot_data;
     apply_committed(&mut state, &db);
-    println!("Recovered term {}, {} log entries, {} committed", state.current_term, state.log.len(), state.commit_index);
+    println!("Recovered term {}, snapshot through {}, {} log entries after it, {} committed",
+        state.current_term, state.snapshot_index, state.log.len(), state.commit_index);
 
     println!("Node {} on {}", node_id, addr);
     println!("Peers: {:?}", state.peers);
@@ -94,7 +99,7 @@ async fn main() {
                 result = listener.accept() => {
                     let (mut stream, _ ) = result.unwrap();
                     if let Ok(msg) = read_rpc_with_timeout(&mut stream).await {
-                        let response = handle_messages(&mut state, msg);
+                        let response = handle_messages(&mut state, msg, &db);
                         if let Err(e) = write_rpc(&mut stream, response).await {
                             eprintln!("Error replying to rpc: {}", e);
                         }

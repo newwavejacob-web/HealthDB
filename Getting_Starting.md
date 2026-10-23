@@ -55,7 +55,13 @@ scripts/cluster.sh        # 5 nodes
 scripts/cluster.sh 3      # 3 nodes
 ```
 
-`scripts/failover-demo.sh` starts 5 nodes, writes a key, kills the leader, and checks that a new leader still serves the key and accepts writes.
+`scripts/failover-demo.sh` starts 5 nodes, writes a key, kills the leader, and checks that a new leader still serves the key and accepts writes. It then `kill -9`s the whole cluster, restarts it, and checks that the data came back from disk.
+
+`scripts/snapshot-demo.sh` runs 3 nodes that compact every 5 entries. It keeps one follower down while the leader compacts, then checks that the follower catches up through `InstallSnapshot` and can serve every key after the leader dies.
+
+Other flags:
+- `--data-dir <dir>`: where `log-<id>.txt` (WAL), `meta-<id>.txt` (term/vote/commit) and `snapshot-<id>.bin` live (default `.`)
+- `--snapshot-every <n>`: compact the log once `n` applied entries have built up past the last snapshot (default 1000)
 
 To run nodes by hand, open one terminal per node. `--nodes` sets the cluster size (default 5); every node must be given the same value:
 

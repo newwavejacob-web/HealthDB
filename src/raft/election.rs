@@ -17,8 +17,8 @@ use crate::logs;
         let request = RequestVote(RequestVoteMsg {
             term: state.current_term,
             candidate_id: state.node_id,
-            last_log_idx: state.log.len() as u64,
-            last_log_term: state.log.last().map(|e| e.term).unwrap_or(0),
+            last_log_idx: state.last_index(),
+            last_log_term: state.last_term(),
         });
         let requests = state.peers.iter().map(|peer| (peer.clone(), request.clone())).collect();
 
@@ -56,7 +56,7 @@ use crate::logs;
     // leader committed stay invisible on this node until a client happens to write (Raft §8).
     fn become_leader(state: &mut NodeState) {
         for peer in state.peers.clone() {
-            state.next_index.insert(peer.clone(), state.log.len() as u64 + 1);
+            state.next_index.insert(peer.clone(), state.last_index() + 1);
             state.match_index.insert(peer, 0);
         }
         state.append_entries(&[logs::log_noop(state.current_term)]);

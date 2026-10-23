@@ -3,6 +3,7 @@
 use crate::raft::{NodeState, Role};
 use serde::{Serialize, Deserialize};
 use crate::store::{self, Database};
+use crate::raft::persist::Snapshot;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppendEntriesMsg {
@@ -39,12 +40,28 @@ pub struct LogEntry {
     pub term: u64,
     pub data: Vec<u8>,
 }
+// sent instead of AppendEntries when a follower needs entries the leader has compacted.
+// the whole snapshot goes in one message; fine for this store's size, no chunking yet.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct InstallSnapshotMsg {
+    pub term: u64,
+    pub leader_id: u64,
+    pub snapshot: Snapshot,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct InstallSnapshotResponse {
+    pub current_term: u64,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum RaftMsg {
     AppendEntries(AppendEntriesMsg),
     RequestVote(RequestVoteMsg),
     AppendEntriesResponse(AppendEntriesResponse),
     RequestVoteResponse(RequestVoteResponse),
+    InstallSnapshot(InstallSnapshotMsg),
+    InstallSnapshotResponse(InstallSnapshotResponse),
 }
 
 pub fn handle_request_vote(state: &mut NodeState, req: RequestVoteMsg) -> RequestVoteResponse{
@@ -61,8 +78,8 @@ pub fn handle_request_vote(state: &mut NodeState, req: RequestVoteMsg) -> Reques
         state.role = Role::Follower;
     }
 
-    let last_term = state.log.last().map(|e| e.term).unwrap_or(0);
-    let last_idx = state.log.len() as u64;
+    let last_term = state.last_term();
+    let last_idx = state.last_index();
 
     let can_vote = state.voted_for.is_none() || state.voted_for == Some(req.candidate_id);
     // Raft §5.4.1: candidate's log is at least as up-to-date if its last term is higher,
@@ -86,7 +103,7 @@ pub fn handle_request_vote(state: &mut NodeState, req: RequestVoteMsg) -> Reques
 }
 
 // this is our logic for how our follower nodes respond to the Append Entries msg.
-pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> AppendEntriesResponse{
+pub fn handle_append_entries(state: &mut NodeState, mut req: AppendEntriesMsg) -> AppendEntriesResponse{
     if req.term > state.current_term {
         state.current_term = req.term;
         state.role = Role::Follower;
@@ -97,67 +114,93 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
         return AppendEntriesResponse {
             current_term: state.current_term,
             success: false,
-            next_index: state.log.len() as u64 + 1,
+            next_index: state.last_index() + 1,
         };
     }
     // the sender is the current leader, even if its log doesn't line up with ours yet
     state.heard_from_leader = true;
 
+    // entries up to our snapshot are committed, so we already have them. skip ahead.
+    if req.prev_log_idx < state.snapshot_index {
+        let skip = (state.snapshot_index - req.prev_log_idx) as usize;
+        req.entries.drain(..skip.min(req.entries.len()));
+        req.prev_log_idx = state.snapshot_index;
+        req.prev_log_term = state.snapshot_term;
+    }
+
     //2
-    if req.prev_log_idx > 0 {
-        let idx = (req.prev_log_idx - 1) as usize;
-        if state.log.len() <= idx || state.log[idx].term != req.prev_log_term {
+    match state.term_at(req.prev_log_idx) {
+        None => {
+            // our log is too short, ask for what comes after our last entry
             return AppendEntriesResponse {
                 current_term: state.current_term,
                 success: false,
-                next_index: state.log.len() as u64 + 1,
+                next_index: state.last_index() + 1,
             };
         }
-
-        if state.log[idx].term != req.prev_log_term {
-            let conflict_term = state.log[idx].term;
-            let mut conflict_idx = idx;
-            while conflict_idx > 0 && state.log[conflict_idx - 1].term == conflict_term {
+        Some(term) if term != req.prev_log_term => {
+            // skip back over the whole conflicting term in one round trip
+            let mut conflict_idx = req.prev_log_idx;
+            while conflict_idx > state.snapshot_index + 1 && state.term_at(conflict_idx - 1) == Some(term) {
                 conflict_idx -= 1;
             }
             return AppendEntriesResponse {
-                current_term: state.current_term, 
-                success: false, 
-                next_index: (conflict_idx + 1) as u64,
+                current_term: state.current_term,
+                success: false,
+                next_index: conflict_idx,
             };
         }
+        _ => {}
     }
     
     //3 and 4 
     // skip entries we already have, drop ours from the first conflict on, append the rest
     for (i, entry) in req.entries.iter().enumerate() {
-        let log_idx = req.prev_log_idx as usize + i;
+        let index = req.prev_log_idx + 1 + i as u64;
 
-        if log_idx < state.log.len() && state.log[log_idx].term == entry.term {
+        if state.term_at(index) == Some(entry.term) {
             continue;
         }
-        state.truncate_log(log_idx);
+        state.truncate_from(index);
         state.append_entries(&req.entries[i..]);
         break;
     }
 
-    //let start_index = req.prev_log_idx as usize;
-    //state.log.truncate(start_index);
-    //state.log.extend(req.entries);
-
     //5
     if req.leader_commit > state.commit_index {
-        state.commit_index = std::cmp::min(req.leader_commit, state.log.len() as u64);
+        state.commit_index = std::cmp::min(req.leader_commit, state.last_index());
     }
 
     AppendEntriesResponse {
         current_term: state.current_term,
         success: true,
-        next_index: state.log.len() as u64 + 1,
+        next_index: state.last_index() + 1,
     }
 }
 
-pub fn handle_messages(state: &mut NodeState, msg: RaftMsg) -> RaftMsg {
+// leader sent its snapshot because we're behind the start of its log
+pub fn handle_install_snapshot(state: &mut NodeState, req: InstallSnapshotMsg, db: &Database) -> InstallSnapshotResponse {
+    if req.term > state.current_term {
+        state.current_term = req.term;
+        state.role = Role::Follower;
+        state.voted_for = None;
+    }
+    if req.term < state.current_term {
+        return InstallSnapshotResponse { current_term: state.current_term };
+    }
+    state.heard_from_leader = true;
+
+    // we already have everything this covers, committed, in our own log or snapshot
+    if req.snapshot.last_index <= state.commit_index {
+        return InstallSnapshotResponse { current_term: state.current_term };
+    }
+
+    state.install_snapshot(&req.snapshot);
+    *db.lock().unwrap() = req.snapshot.data;
+    InstallSnapshotResponse { current_term: state.current_term }
+}
+
+pub fn handle_messages(state: &mut NodeState, msg: RaftMsg, db: &Database) -> RaftMsg {
     let response = match msg {
         RaftMsg::AppendEntries(ae) => {
             if state.role == Role::Candidate {
@@ -167,6 +210,12 @@ pub fn handle_messages(state: &mut NodeState, msg: RaftMsg) -> RaftMsg {
         }
         RaftMsg::RequestVote(rv) => {
             RaftMsg::RequestVoteResponse(handle_request_vote(state,rv))
+        }
+        RaftMsg::InstallSnapshot(snap) => {
+            if state.role == Role::Candidate {
+                state.role = Role::Follower;
+            }
+            RaftMsg::InstallSnapshotResponse(handle_install_snapshot(state, snap, db))
         }
         _ => msg
     };

@@ -44,7 +44,7 @@ pub async fn parse_command(state: &mut NodeState, command: &str, db: &Database) 
             let _flag = true;
 
             let entry = logs::log_set(&key, &value, state.current_term);
-            let entry_index = state.log.len() as u64 + 1;
+            let entry_index = state.last_index() + 1;
 
             state.append_entries(&[entry]);
 
@@ -76,7 +76,7 @@ pub async fn parse_command(state: &mut NodeState, command: &str, db: &Database) 
             let key = parts[1];
 
             let entry = logs::log_del(&key, state.current_term);
-            let entry_index = state.log.len() as u64 + 1;
+            let entry_index = state.last_index() + 1;
 
             state.append_entries(&[entry]);
 

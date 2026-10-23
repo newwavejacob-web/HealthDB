@@ -12,3 +12,4 @@ HealthDB.md
 cluster-logs/
 meta-*.txt
 *.tmp
+snapshot-*.bin

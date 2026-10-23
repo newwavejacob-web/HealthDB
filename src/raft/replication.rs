@@ -5,7 +5,8 @@
      * state machine
      */
 use std::collections::HashMap;
-use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, broadcast, apply_entry};
+use crate::raft::{NodeState, Role, RaftMsg, AppendEntriesMsg, InstallSnapshotMsg, broadcast, apply_entry};
+use crate::raft::persist::{Snapshot, read_snapshot};
 use crate::store::Database;
 
     // here im gonna actually write the fault tolerant logs to Database
@@ -19,14 +20,13 @@ use crate::store::Database;
     pub fn advance_commit(state: &mut NodeState){
         if state.role != Role::Leader { return; }
 
-        for n in (state.commit_index + 1)..=(state.log.len() as u64) {
-            let mut match_count = 1;
-            let idx = (n - 1) as usize;
-
-            if state.log[idx].term != state.current_term {
+        for n in (state.commit_index + 1)..=state.last_index() {
+            // only entries from our own term are committed by counting replicas (§5.4.2)
+            if state.term_at(n) != Some(state.current_term) {
                 continue;
             }
 
+            let mut match_count = 1;
             for (_peer, &matched) in &state.match_index {
                 if matched >= n {
                     match_count += 1;
@@ -35,7 +35,7 @@ use crate::store::Database;
 
             let majority = (state.peers.len() + 1)/ 2 + 1;
 
-            if match_count >= majority && state.log[idx].term == state.current_term {
+            if match_count >= majority {
                 state.commit_index = n;
             }
         }
@@ -45,21 +45,29 @@ use crate::store::Database;
         let mut requests = Vec::new();
         // how far each peer's log will match ours if it accepts this message
         let mut sent_up_to = HashMap::new();
+        let mut snapshot: Option<Snapshot> = None;
 
         for peer in state.peers.clone() {
             let next_idx = *state.next_index.get(&peer).unwrap_or(&1);
-            let prev_idx = next_idx - 1;
-            let prev_term = if prev_idx > 0 {
-                state.log.get((prev_idx - 1) as usize).map(|e| e.term).unwrap_or(0)
-            } else {
-                0
-            };
 
-            let entries: Vec<LogEntry> = state.log
-                .iter()
-                .skip((next_idx - 1) as usize)
-                .cloned()
-                .collect();
+            // the entries this peer needs next have been compacted away, send the snapshot
+            if next_idx <= state.snapshot_index {
+                if snapshot.is_none() {
+                    snapshot = Some(read_snapshot(&state.snapshot_path()).expect("fatal: could not read snapshot"));
+                }
+                let snap = snapshot.clone().unwrap();
+                sent_up_to.insert(peer.clone(), snap.last_index);
+                requests.push((peer, RaftMsg::InstallSnapshot(InstallSnapshotMsg {
+                    term: state.current_term,
+                    leader_id: state.node_id,
+                    snapshot: snap,
+                })));
+                continue;
+            }
+
+            let prev_idx = next_idx - 1;
+            let prev_term = state.term_at(prev_idx).unwrap_or(0);
+            let entries = state.entries_from(next_idx);
             sent_up_to.insert(peer.clone(), prev_idx + entries.len() as u64);
 
             let msg = RaftMsg::AppendEntries(AppendEntriesMsg {
@@ -74,25 +82,25 @@ use crate::store::Database;
         }
 
         for (peer, result) in broadcast(requests).await {
-            match result {
-                Ok(RaftMsg::AppendEntriesResponse(response)) => {
-                    if response.current_term > state.current_term {
-                        // a newer leader exists, stop acting as leader
-                        state.current_term = response.current_term;
-                        state.role = Role::Follower;
-                        state.voted_for = None;
-                        state.persist_meta();
-                        return;
-                    }
-                    if response.success {
-                        write_to_logs(state, peer.clone(), sent_up_to[&peer]);
-                    }
-                    else {
-                        state.next_index.insert(peer.clone(), response.next_index);
-                    }
-                }
-                Err(e) => eprintln!("Error: {}", e),
-                _ => {}
+            let (term, success, next_index) = match result {
+                Ok(RaftMsg::AppendEntriesResponse(r)) => (r.current_term, r.success, r.next_index),
+                Ok(RaftMsg::InstallSnapshotResponse(r)) => (r.current_term, true, 0),
+                Err(e) => { eprintln!("Error: {}", e); continue; }
+                _ => continue,
+            };
+            if term > state.current_term {
+                // a newer leader exists, stop acting as leader
+                state.current_term = term;
+                state.role = Role::Follower;
+                state.voted_for = None;
+                state.persist_meta();
+                return;
+            }
+            if success {
+                write_to_logs(state, peer.clone(), sent_up_to[&peer]);
+            }
+            else {
+                state.next_index.insert(peer.clone(), next_index.max(1));
             }
         }
         // commit_index may have moved
@@ -104,7 +112,12 @@ use crate::store::Database;
     pub fn apply_committed(state: &mut NodeState, db: &Database) {
         while state.commit_index > state.last_applied {
             state.last_applied += 1;
-            apply_entry(db, &state.log[(state.last_applied - 1) as usize]);
+            apply_entry(db, state.entry(state.last_applied));
+        }
+
+        if state.last_applied - state.snapshot_index >= state.snapshot_threshold {
+            let data = db.lock().unwrap().clone();
+            state.compact(data);
         }
     }
 
