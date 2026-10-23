@@ -1,35 +1,7 @@
-use crate::store::Database;
-use crate::store;
 use crate::raft::LogEntry;
 
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::error::Error;
 use crc32fast::Hasher;
 
-// each node keeps its own WAL file so multiple nodes can run in one directory
-// without stomping on each other's log.
-pub fn log_path(node_id: u64) -> String {
-    format!("log-{}.txt", node_id)
-}
-
-pub fn create_log(db: &Database, node_id: u64) {
-    let path = log_path(node_id);
-    let file_result = File::open(&path);
-    // both arms of a match must return the same type
-    match file_result {
-        Ok(file) => {
-            match reload(&file, &db){
-                Ok(_) => println!("logfile already created, reload done"),
-                Err(e) => eprintln!("Reload failed: {}", e),
-            }
-        }
-        Err(_) => {
-            let _ = File::create(&path);
-            println!("created new Log file: {}", path);
-        }
-    }
-}
 // call these in store.rs, when called it will append to the log file
 pub fn log_set(key: &str, value: &str, term: u64) -> LogEntry {
     println!("LOG_SET CALLED with key: {}, value: {}", key, value);
@@ -96,69 +68,44 @@ pub fn log_noop(term: u64) -> LogEntry {
     }
 }
 
-// need to use a flag to know whether we append or reload, add handling
-// RELOAD WHENEVER LOGS DONT MATCH DATABASE? IM PRETTY SURE aka when its just new dont overthink it
-pub fn reload(log_file: &File, db: &Database) -> Result<(), Box<dyn Error>> {
-// only needs to be done in main right? since be are taking the new shit and jsjt adding to it.
-parse_log(&log_file, &db)
+// checks a stored entry ("<len> <payload> <crc>\n") against its length and CRC32.
+// the payload is sliced out exactly rather than re-joined from tokens, so the check
+// doesn't depend on how the value was spaced.
+pub fn checksum_ok(data: &str) -> bool {
+    let line = match data.strip_suffix('\n') {
+        Some(l) => l,
+        None => return false,
+    };
+    let (len, rest) = match line.split_once(' ') {
+        Some(p) => p,
+        None => return false,
+    };
+    let (payload, crc) = match rest.rsplit_once(' ') {
+        Some(p) => p,
+        None => return false,
+    };
+    let payload = format!("{}\n", payload);
+
+    let mut hasher = Hasher::new();
+    hasher.update(payload.as_bytes());
+    len.parse::<usize>().ok() == Some(payload.len()) && crc.parse::<u32>().ok() == Some(hasher.finalize())
 }
 
-//TODO update parsing to serialization in serde
-pub fn parse_log(file: &File, db: &Database)-> Result<(), Box<dyn Error>>{
-let reader = BufReader::new(file);
-    for line in reader.lines() {
-        let line_result = line?;
-        //let response = parse_log_command(&line_result,&db); //just implement clients?  YES YOU JUST
-        let parts: Vec<&str> = line_result.split_whitespace().collect();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        let lastidx = parts.len() - 1;
-        match parts[1].to_uppercase().as_str() {
-            "SET" => {
-
-                let payload_string = format!("{} {} {}\n", parts[1], parts[2], parts[3..lastidx].join(" "));
-                let payload = payload_string.as_bytes();
-
-                let mut hasher = Hasher::new();
-                hasher.update(payload);
-                let checksum = hasher.finalize();
-                println!("CRC32 checksum: {}", checksum); 
-
-                let write_check = parts[lastidx].parse::<u32>()?;
-                if checksum != write_check {
-                    eprintln!("Checksum doesn't match, Recheck Data for tampering."); // must add proper error handling
-                    continue;
-                }
-
-                let key = parts[2].to_string();
-                let value = parts[3].to_string();
-                let flag = false;
-
-                store::set(&db, key, value, flag);
-
-            }
-            "DEL" => {
-
-                let payload_string = format!("{} {}\n", parts[1], parts[2..lastidx].join(" "));
-                let payload = payload_string.as_bytes();
-
-                let mut hasher = Hasher::new();
-                hasher.update(payload);
-                let checksum = hasher.finalize();
-
-                println!("CRC32 checksum: {}", checksum); 
-                let write_check = parts[lastidx].parse::<u32>()?;
-                if checksum != write_check {
-                    eprintln!("Checksum doesn't match, Recheck Data for tampering."); // must add proper error handling
-                    continue;
-                }
-
-                let key = parts[2];
-                let flag = false;
-                store::delete(&db.clone(), key, flag);
-            }
-            _ => eprintln!("Wall reload complete"),
+    #[test]
+    fn checksums_round_trip() {
+        for entry in [log_set("k", "two words", 1), log_del("k", 1), log_noop(1)] {
+            assert!(checksum_ok(std::str::from_utf8(&entry.data).unwrap()));
         }
     }
-    Ok(())
-}
 
+    #[test]
+    fn checksum_catches_tampering() {
+        let entry = log_set("k", "v", 1);
+        let tampered = String::from_utf8(entry.data).unwrap().replace(" v ", " x ");
+        assert!(!checksum_ok(&tampered));
+    }
+}

@@ -4,6 +4,7 @@ pub mod messages;
 pub mod rpc;
 pub mod state;
 pub mod replication;
+pub mod persist;
 
 pub use messages::*;
 pub use rpc::*;

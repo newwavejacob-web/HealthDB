@@ -4,7 +4,8 @@ mod clients;
 mod logs; 
 mod raft;
 
-use raft::{NodeState, Role, read_rpc_with_timeout, write_rpc, start_leader_election, handle_messages, send_heartbeats, apply_entry};
+use raft::{NodeState, Role, read_rpc_with_timeout, write_rpc, start_leader_election, handle_messages, send_heartbeats, apply_committed};
+use std::path::PathBuf;
 use tokio::net::TcpListener;
 use tokio::time::{Duration, sleep};
 use tokio::io::{AsyncBufReadExt, BufReader, AsyncWriteExt};
@@ -17,7 +18,7 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        println!("Usage: cargo run -- <node id> [--nodes <cluster size>]");
+        println!("Usage: cargo run -- <node id> [--nodes <cluster size>] [--data-dir <dir>]");
         return;
     }
 
@@ -37,10 +38,13 @@ async fn main() {
         .map(|id| format!("127.0.0.1:{}", 5000 + id))
         .collect();
 
-    let mut state = NodeState::new(node_id, addr.clone(), peers);
-
-    // replay this node's WAL into the in-memory store on startup (crash recovery).
-    logs::create_log(&db, node_id);
+    // crash recovery: reload term, vote and raft log from disk, then replay the
+    // committed part of the log into the in-memory store.
+    let data_dir = PathBuf::from(flag_value(&args, "--data-dir").unwrap_or("."));
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let mut state = NodeState::load(node_id, addr.clone(), peers, data_dir).expect("failed to load raft state");
+    apply_committed(&mut state, &db);
+    println!("Recovered term {}, {} log entries, {} committed", state.current_term, state.log.len(), state.commit_index);
 
     println!("Node {} on {}", node_id, addr);
     println!("Peers: {:?}", state.peers);
@@ -96,14 +100,8 @@ async fn main() {
                 }
             }
 
-            // apply any newly-committed entries to the state machine. this runs after every
-            // event so followers (whose commit_index advances inside handle_append_entries)
-            // actually apply committed entries to their store, not just the leader.
-            while state.commit_index > state.last_applied {
-                state.last_applied += 1;
-                let entry = state.log[(state.last_applied - 1) as usize].clone();
-                apply_entry(&db, &entry);
-            }
+            // apply any newly-committed entries to the state machine after every event
+            apply_committed(&mut state, &db);
         }
         
 //    }

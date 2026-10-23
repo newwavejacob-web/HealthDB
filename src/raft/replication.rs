@@ -4,10 +4,9 @@
      * once last applied works and every node as replicated commited entries, apply them to the
      * state machine
      */
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::collections::HashMap;
-use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, broadcast};
+use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, broadcast, apply_entry};
+use crate::store::Database;
 
     // here im gonna actually write the fault tolerant logs to Database
     pub fn write_to_logs(state: &mut NodeState, peer: String, matched_to: u64){
@@ -82,6 +81,7 @@ use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, broadcas
                         state.current_term = response.current_term;
                         state.role = Role::Follower;
                         state.voted_for = None;
+                        state.persist_meta();
                         return;
                     }
                     if response.success {
@@ -95,20 +95,17 @@ use crate::raft::{NodeState, Role, LogEntry, RaftMsg, AppendEntriesMsg, broadcas
                 _ => {}
             }
         }
+        // commit_index may have moved
+        state.persist_meta();
     }
     
-    // this actually appends our nodestate log to file.
-    // sync (blocking std::fs) on purpose: it's a small append and it's called from
-    // both async (leader, in clients.rs) and sync (follower, in messages.rs) paths.
-    pub fn persist_entry(node_id: u64, log: &LogEntry) -> std::io::Result<()> {
-        let mut file = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(crate::logs::log_path(node_id))?;
-
-        file.write_all(&log.data)?;
-        println!("Appended to log");
-        Ok(())
+    // applies newly-committed entries to the store. runs on every node, so followers
+    // (whose commit_index advances inside handle_append_entries) apply them too.
+    pub fn apply_committed(state: &mut NodeState, db: &Database) {
+        while state.commit_index > state.last_applied {
+            state.last_applied += 1;
+            apply_entry(db, &state.log[(state.last_applied - 1) as usize]);
+        }
     }
 
 /*pub fn apply_entry(db: &mut Database, entry: &LogEntry){

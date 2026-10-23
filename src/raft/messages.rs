@@ -2,7 +2,6 @@
 //always remember to modulate. it will help you think about the problem clearer
 use crate::raft::{NodeState, Role};
 use serde::{Serialize, Deserialize};
-use crate::raft::replication::persist_entry;
 use crate::store::{self, Database};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -126,30 +125,16 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
     }
     
     //3 and 4 
+    // skip entries we already have, drop ours from the first conflict on, append the rest
     for (i, entry) in req.entries.iter().enumerate() {
         let log_idx = req.prev_log_idx as usize + i;
 
-        if log_idx < state.log.len() {
-            if state.log[log_idx].term != entry.term {
-                state.log.truncate(log_idx);
-                state.log.extend(req.entries[i..].iter().cloned());
-                for entry in &req.entries[i..] {
-                    if let Err(e) = persist_entry(state.node_id, entry) {
-                        eprintln!("WAL persist failed: {}", e);
-                    }
-                }
-                break;
-            }
+        if log_idx < state.log.len() && state.log[log_idx].term == entry.term {
+            continue;
         }
-        else {
-            state.log.extend(req.entries[i..].iter().cloned());
-            for entry in &req.entries[i..] {
-                if let Err(e) = persist_entry(state.node_id, entry) {
-                    eprintln!("WAL persist failed: {}", e);
-                }
-            }
-            break;
-        }
+        state.truncate_log(log_idx);
+        state.append_entries(&req.entries[i..]);
+        break;
     }
 
     //let start_index = req.prev_log_idx as usize;
@@ -169,7 +154,7 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
 }
 
 pub fn handle_messages(state: &mut NodeState, msg: RaftMsg) -> RaftMsg {
-    match msg {
+    let response = match msg {
         RaftMsg::AppendEntries(ae) => {
             if state.role == Role::Candidate {
                 state.role = Role::Follower;
@@ -180,7 +165,10 @@ pub fn handle_messages(state: &mut NodeState, msg: RaftMsg) -> RaftMsg {
             RaftMsg::RequestVoteResponse(handle_request_vote(state,rv))
         }
         _ => msg
-    }
+    };
+    // whatever term/vote/commit we're about to report must already be durable
+    state.persist_meta();
+    response
 }
 
 //pub fn handle_append_response(state: &mut NodeState, msg: AppendEntriesResponse) {
@@ -210,10 +198,11 @@ pub fn apply_entry(db: &Database, entry: &LogEntry){
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::raft::test_dir;
 
     #[test]
     fn test_append_entries_valid() {
-        let mut state = NodeState::new(1, "127.0.0.1:5001".into(), vec![]);
+        let mut state = NodeState::new(1, "127.0.0.1:5001".into(), vec![], test_dir("ae-valid"));
         state.current_term = 1;
 
         let req = AppendEntriesMsg {
@@ -232,7 +221,7 @@ mod tests {
 
     #[test]
     fn test_append_entries_rejects() {
-        let mut state = NodeState::new(1, "127.0.0.1:5001".into(), vec![]);
+        let mut state = NodeState::new(1, "127.0.0.1:5001".into(), vec![], test_dir("ae-rejects"));
         state.current_term = 5;
 
         let req = AppendEntriesMsg {

@@ -1,7 +1,7 @@
 // this is my client handling file 
 
 use crate::store::{self, Database};
-use crate::raft::{NodeState, Role, persist_entry, log_replication, apply_entry};
+use crate::raft::{NodeState, Role, log_replication, apply_committed};
 use crate::logs;
 
 
@@ -46,18 +46,10 @@ pub async fn parse_command(state: &mut NodeState, command: &str, db: &Database) 
             let entry = logs::log_set(&key, &value, state.current_term);
             let entry_index = state.log.len() as u64 + 1;
 
-            state.log.push(entry.clone());
-            if let Err(e) = persist_entry(state.node_id, &entry) {
-                eprintln!("WAL persist failed: {}", e);
-            }
+            state.append_entries(&[entry]);
 
             log_replication(state).await;
-
-
-            while state.commit_index > state.last_applied {
-                state.last_applied += 1;
-                apply_entry(db, & state.log[(state.last_applied - 1) as usize ]);
-            }
+            apply_committed(state, db);
 
             if state.commit_index >= entry_index {
                 "OK".to_string()
@@ -86,18 +78,10 @@ pub async fn parse_command(state: &mut NodeState, command: &str, db: &Database) 
             let entry = logs::log_del(&key, state.current_term);
             let entry_index = state.log.len() as u64 + 1;
 
-            state.log.push(entry.clone());
-            if let Err(e) = persist_entry(state.node_id, &entry) {
-                eprintln!("WAL persist failed: {}", e);
-            }
+            state.append_entries(&[entry]);
 
             log_replication(state).await;
-
-
-            while state.commit_index > state.last_applied {
-                state.last_applied += 1;
-                apply_entry(db, & state.log[(state.last_applied - 1) as usize ]);
-            }
+            apply_committed(state, db);
 
             if state.commit_index >= entry_index {
                 key.to_string()

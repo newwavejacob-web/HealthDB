@@ -1,13 +1,15 @@
 //vote handliong, elecition logic
 use crate::raft::{NodeState, Role, RequestVoteMsg, broadcast, RaftMsg};
 use crate::raft::RaftMsg::RequestVote;
-use crate::raft::replication::{log_replication, persist_entry};
+use crate::raft::replication::log_replication;
 use crate::logs;
 
 
     pub async fn start_leader_election(state: &mut NodeState) {
         state.current_term += 1;
         state.voted_for = Some(state.node_id.clone());
+        // the new term and our self-vote must be on disk before anyone hears about them
+        state.persist_meta();
         
         let mut votes = 1;
         let majority = (state.peers.len() + 1) / 2 + 1;
@@ -28,6 +30,7 @@ use crate::logs;
                         state.role = Role::Follower;
                         state.current_term = response.current_term;
                         state.voted_for = None;
+                        state.persist_meta();
                         return;
                     }
                     if response.voted && response.current_term == state.current_term {
@@ -56,11 +59,7 @@ use crate::logs;
             state.next_index.insert(peer.clone(), state.log.len() as u64 + 1);
             state.match_index.insert(peer, 0);
         }
-        let noop = logs::log_noop(state.current_term);
-        state.log.push(noop.clone());
-        if let Err(e) = persist_entry(state.node_id, &noop) {
-            eprintln!("WAL persist failed: {}", e);
-        }
+        state.append_entries(&[logs::log_noop(state.current_term)]);
     }
 
     

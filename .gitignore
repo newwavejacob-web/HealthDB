@@ -10,3 +10,5 @@ Getting_Starting.md
 HealthDB.md
 /src/resume.md
 cluster-logs/
+meta-*.txt
+*.tmp
