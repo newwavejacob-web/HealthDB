@@ -34,6 +34,9 @@ pub struct NodeState {
     pub address: String,
     pub peers: Vec<String>,
 
+    // set when a valid leader contacts us or we grant a vote; main resets the election timer
+    pub heard_from_leader: bool,
+
     // where the WAL and meta file live, and what the meta file currently says
     pub data_dir: PathBuf,
     persisted: Meta,
@@ -53,6 +56,7 @@ impl NodeState {
             node_id,
             address,
             peers,
+            heard_from_leader: false,
             data_dir,
             persisted: Meta::default(),
         }

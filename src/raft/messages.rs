@@ -72,6 +72,7 @@ pub fn handle_request_vote(state: &mut NodeState, req: RequestVoteMsg) -> Reques
 
     if can_vote && up_to_date_check {
         state.voted_for = Some(req.candidate_id);
+        state.heard_from_leader = true;
         return RequestVoteResponse {
             current_term: state.current_term,
             voted: true,
@@ -99,6 +100,9 @@ pub fn handle_append_entries(state: &mut NodeState, req: AppendEntriesMsg) -> Ap
             next_index: state.log.len() as u64 + 1,
         };
     }
+    // the sender is the current leader, even if its log doesn't line up with ours yet
+    state.heard_from_leader = true;
+
     //2
     if req.prev_log_idx > 0 {
         let idx = (req.prev_log_idx - 1) as usize;

@@ -7,10 +7,20 @@ mod raft;
 use raft::{NodeState, Role, read_rpc_with_timeout, write_rpc, start_leader_election, handle_messages, send_heartbeats, apply_committed};
 use std::path::PathBuf;
 use tokio::net::TcpListener;
-use tokio::time::{Duration, sleep};
+use tokio::time::{Duration, Instant, interval, sleep_until, timeout};
+use std::collections::hash_map::RandomState;
+use std::hash::{BuildHasher, Hasher};
 use tokio::io::{AsyncBufReadExt, BufReader, AsyncWriteExt};
 use clients::parse_command;
 
+const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(125);
+const CLIENT_READ_TIMEOUT: Duration = Duration::from_millis(100);
+
+// 300-600ms. RandomState is randomly seeded, which is enough jitter without adding the rand crate
+fn random_election_timeout() -> Duration {
+    let r = RandomState::new().build_hasher().finish();
+    Duration::from_millis(300 + r % 300)
+}
 
 #[tokio::main]
 async fn main() {
@@ -61,20 +71,24 @@ async fn main() {
     let client_listener = TcpListener::bind(format!("127.0.0.1:{}", client_port)).await.unwrap();
     println!("Client port: {}", client_port);
 
-        let election_timeout = Duration::from_millis(150 + (node_id * 50));
+        // the election deadline only moves when we hear from a valid leader or grant a vote
+        // (Raft §5.2). resetting it on every incoming RPC let a candidate with a stale log,
+        // which can never win, keep everyone else from ever timing out.
+        let mut election_deadline = Instant::now() + random_election_timeout();
+        let mut heartbeat = interval(HEARTBEAT_INTERVAL);
 
         loop {
             tokio::select! {
-                // this sleep block needs to eventually be our random election timeout 
-                _ = sleep(election_timeout) => {
+                _ = sleep_until(election_deadline), if state.role != Role::Leader => {
                     println!("Election Timeout, Starting leader election");
                     state.role = Role::Candidate;
                     start_leader_election(&mut state).await;
+                    election_deadline = Instant::now() + random_election_timeout();
                 }
-                // sends heartbeats if we have a leader every 125 ms, lowkey works really well with
-                // tokio select! macro 
-                _ = sleep(Duration::from_millis(125)), if state.role == Role::Leader => {
+                // heartbeats run on a fixed interval, so a busy leader can't starve them
+                _ = heartbeat.tick(), if state.role == Role::Leader => {
                     send_heartbeats(&mut state).await;
+                    election_deadline = Instant::now() + random_election_timeout();
                 }
                 // this accounts for both normal rpc calls as well as heartbeats
                 result = listener.accept() => {
@@ -91,13 +105,21 @@ async fn main() {
                     let mut reader = BufReader::new(stream);
                     let mut line = String::new();
 
-                    if reader.read_line(&mut line).await.is_ok() {
+                    // a client that connects and never sends a line would otherwise freeze the node
+                    if let Ok(Ok(_)) = timeout(CLIENT_READ_TIMEOUT, reader.read_line(&mut line)).await {
                         let response = parse_command(&mut state, line.trim(), &db).await;
                         let mut stream = reader.into_inner();
-                        stream.write_all(response.as_bytes()).await.unwrap();
-                        stream.write_all(b"\n").await.unwrap();
+                        let reply = format!("{}\n", response);
+                        if let Err(e) = stream.write_all(reply.as_bytes()).await {
+                            eprintln!("Error replying to client: {}", e);
+                        }
                     }
                 }
+            }
+
+            if state.heard_from_leader {
+                state.heard_from_leader = false;
+                election_deadline = Instant::now() + random_election_timeout();
             }
 
             // apply any newly-committed entries to the state machine after every event

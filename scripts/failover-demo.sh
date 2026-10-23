@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 5-node failover check: start the cluster, write a key through the leader, kill the
 # leader, wait for a new one to be elected, then write and read through the new leader.
+# Finally kill -9 every node, restart them all, and check the data came back from disk.
 # Exits non-zero if any step fails.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -57,5 +58,35 @@ echo "GET patient -> $reply"
 reply=$(send "$new_leader" "SET patient 43")
 echo "SET patient 43 -> $reply (4 of 5 nodes up)"
 [[ "$reply" == "OK" ]] || { echo "FAIL: write after failover"; exit 1; }
+
+start_node() {
+    ./target/debug/master "$1" --nodes "$NODES" >> "cluster-logs/node-$1.out" 2>&1 &
+    pids[$(($1 - 1))]=$!
+}
+
+echo "kill -9 on all nodes, then restarting them"
+for p in "${pids[@]}"; do kill -9 "$p" 2>/dev/null || true; done
+wait 2>/dev/null || true
+for i in $(seq 1 "$NODES"); do echo "--- restart ---" >> "cluster-logs/node-$i.out"; done
+for i in $(seq 1 "$NODES"); do start_node "$i"; done
+sleep 3
+
+# only look at output written after the restart
+find_leader_after_restart() {
+    local best_node="" best_term=-1
+    for i in $(seq 1 "$NODES"); do
+        local t
+        t=$(sed -n '/--- restart ---/,$p' "cluster-logs/node-$i.out" | grep -o "became leader for term [0-9]*" | tail -1 | awk '{print $NF}')
+        if [[ -n "$t" && "$t" -gt "$best_term" ]]; then best_term=$t; best_node=$i; fi
+    done
+    echo "$best_node"
+}
+leader=$(find_leader_after_restart)
+[[ -n "$leader" ]] || { echo "FAIL: no leader after restart"; exit 1; }
+echo "leader after restart: node $leader"
+
+reply=$(send "$leader" "GET patient")
+echo "GET patient -> $reply"
+[[ "$reply" == "43" ]] || { echo "FAIL: data lost across restart"; exit 1; }
 
 echo "PASS"

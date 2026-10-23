@@ -182,7 +182,7 @@ The node ID determines:
 
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
-| Election timeout | 150ms + (node_id × 50ms) | Time before starting election |
+| Election timeout | random 300–600ms | Time without hearing from a leader before starting an election |
 | Heartbeat interval | 125ms | Leader heartbeat frequency |
 
 ---
